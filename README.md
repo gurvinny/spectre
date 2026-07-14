@@ -18,7 +18,7 @@
 <br/>
 
 [![Version](https://img.shields.io/badge/Version-0.1.0-35E0C4.svg?style=flat-square&labelColor=0a0e12)](#)
-[![License](https://img.shields.io/badge/License-MIT-35E0C4.svg?style=flat-square&logo=opensourceinitiative&logoColor=white&labelColor=0a0e12)](LICENSE)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-35E0C4.svg?style=flat-square&logo=gnu&logoColor=white&labelColor=0a0e12)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-35E0C4.svg?style=flat-square&logo=python&logoColor=white&labelColor=0a0e12)](sensor/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-35E0C4.svg?style=flat-square&logo=fastapi&logoColor=white&labelColor=0a0e12)](sensor/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-C9D6DF.svg?style=flat-square&logo=nextdotjs&logoColor=white&labelColor=0a0e12)](web/)
@@ -184,6 +184,12 @@ exact steps, plus the host-reader fallback, are in **[docs/deployment.md](docs/d
 ## ✦ Author
 
 Built by **gurvinny** — [github.com/gurvinny](https://github.com/gurvinny).
-Licensed under [MIT](LICENSE).
+
+Licensed under the **GNU AGPL-3.0-or-later** — see [LICENSE](LICENSE). Copyright © 2026 gurvinny.
+If you host a modified version, the AGPL requires you to publish your changes under the same license.
+
+**Commercial license:** to use SPECTRE in a closed-source or commercial product without the AGPL's
+source-disclosure obligations, a separate commercial license is available — reach out via
+[github.com/gurvinny](https://github.com/gurvinny).
 
 <div align="center"><br/><sub>SPECTRE · Signal Processing &amp; Electromagnetic Threat Reconnaissance Engine</sub></div>
