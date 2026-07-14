@@ -1,0 +1,5 @@
+# SPECTRE sensor runtime dependencies.
+# The ingest/detection/storage core is standard-library only; these are just
+# for the HTTP/WebSocket API layer.
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0

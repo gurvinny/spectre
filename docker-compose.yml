@@ -1,0 +1,71 @@
+# SPECTRE — WiFi Threat Sensor
+# Author: gurvinny
+#
+# Identical compose for dev and production; only .env differs between hosts.
+# The `sensor` service needs the two ESP32-C5 serial adapters passed through.
+
+services:
+  sensor:
+    build: ./sensor
+    container_name: spectre-sensor
+    restart: unless-stopped
+    env_file: .env
+    # Pass the USB serial adapters into the container. On an unprivileged
+    # Proxmox LXC the host may also need lxc.cgroup2.devices.allow entries —
+    # see docs/deployment.md.
+    # NOTE: only devices that actually exist can be listed here — Docker errors
+    # on a missing device. Uncomment the ttyUSB1 line once the 5GHz board is
+    # attached, and set SERIAL_PORTS in .env to match.
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+      - "/dev/ttyUSB1:/dev/ttyUSB1"
+    # dialout gid so the container user can read the tty devices.
+    group_add:
+      - dialout
+    volumes:
+      - spectre-data:/data
+    ports:
+      - "${API_PORT:-8100}:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8100/health',timeout=3).status==200 else sys.exit(1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - spectre-net
+    # Respect the 4GB RAM guard on this host.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8100}
+    container_name: spectre-web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8100}
+    ports:
+      - "${WEB_PORT:-4100}:3000"
+    depends_on:
+      - sensor
+    networks:
+      - spectre-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 384M
+
+volumes:
+  spectre-data:
+
+networks:
+  spectre-net:
+    driver: bridge

@@ -1,0 +1,21 @@
+# Optional override: attach SPECTRE to an existing Nginx Proxy Manager
+# network for TLS + access control (mirrors the dashboard project pattern).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d
+#
+# The external network must already exist (created by your NPM stack).
+
+services:
+  web:
+    networks:
+      - spectre-net
+      - npm-net
+  sensor:
+    networks:
+      - spectre-net
+      - npm-net
+
+networks:
+  npm-net:
+    external: true
+    name: npm-network

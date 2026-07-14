@@ -1,0 +1,35 @@
+# Secrets & runtime config
+.env
+*.env.local
+
+# Data (SQLite DB, captures, logs)
+/data/
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+captures/*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

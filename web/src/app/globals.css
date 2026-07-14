@@ -1,0 +1,253 @@
+/*
+ * SPECTRE — global styles & design tokens
+ * Visual language: RF spectrum-analyzer / signals console (phosphor on scope-black).
+ * The accent (phosphor) is themeable at runtime via html[data-theme=…]; status,
+ * severity and band-contrast colors stay semantic across every skin.
+ * Author: gurvinny
+ */
+@import "tailwindcss";
+
+@theme {
+  /* ── surfaces (blue-black, not pure black) — constant across skins ── */
+  --color-scope-bg: #0a0e12;
+  --color-scope-panel: #0f1620;
+  --color-scope-panel2: #131d29;
+  --color-scope-grid: #1e2a35;
+  --color-scope-line: #263542;
+
+  /* ── phosphor signal (THEMEABLE — default skin: Phosphor / teal) ── */
+  --color-phosphor: #35e0c4;   /* primary trace / signal / accent */
+  --color-phosphor-dim: #1c8a79;
+
+  /* ── fixed RF accents ── */
+  --color-rf-amber: #f5a623;   /* attention / RF activity */
+  --color-alert: #ff4d5e;      /* threats / critical */
+  --color-violet: #9b8cff;     /* 5GHz band accent (kept distinct from phosphor) */
+
+  /* ── text ── */
+  --color-ink: #c9d6df;
+  --color-ink-dim: #8598a6;
+  --color-ink-mute: #5b6b78;
+
+  /* ── severity ramp (status — reserved, never themed) ── */
+  --color-sev-critical: #ff4d5e;
+  --color-sev-high: #ff8a3d;
+  --color-sev-medium: #f5c542;
+  --color-sev-low: #35e0c4;
+  --color-sev-info: #6b8fb0;
+
+  --font-display: var(--font-chakra), ui-sans-serif, system-ui;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+/*
+ * Theme skins — override only the accent pair. html[data-theme] (0,1,1) beats the
+ * @theme :root (0,1,0), so the whole app (text-phosphor, borders, glows, charts
+ * that read the var) recolors with a single attribute swap, no JS repaint.
+ */
+html[data-theme="amber"] {
+  --color-phosphor: #f5b53d;
+  --color-phosphor-dim: #9a6a12;
+}
+html[data-theme="ice"] {
+  --color-phosphor: #48b4ff;
+  --color-phosphor-dim: #2065a0;
+}
+html[data-theme="nightvision"] {
+  --color-phosphor: #48f09a;
+  --color-phosphor-dim: #1c8a55;
+}
+
+:root {
+  color-scheme: dark;
+  /* accent-tinted glow, derived from the active phosphor so it follows the skin */
+  --glow: color-mix(in oklab, var(--color-phosphor) 55%, transparent);
+  --glow-soft: color-mix(in oklab, var(--color-phosphor) 16%, transparent);
+}
+
+* {
+  border-color: var(--color-scope-line);
+}
+
+html,
+body {
+  background: var(--color-scope-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Faint scope grid behind the whole app — the RF-instrument backdrop. */
+body {
+  background-image:
+    linear-gradient(var(--color-scope-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-scope-grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-position: -1px -1px;
+  background-attachment: fixed;
+  position: relative;
+}
+body::before {
+  /* vignette + faint accent bloom at the top so the grid fades at the edges */
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% -10%, var(--glow-soft), transparent 45%),
+    radial-gradient(ellipse at 50% 0%, transparent 40%, rgba(10, 14, 18, 0.9) 100%);
+  z-index: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .phosphor-glow {
+    text-shadow: 0 0 8px var(--glow);
+  }
+}
+
+/* ── reusable primitives ── */
+.panel {
+  background: color-mix(in oklab, var(--color-scope-panel) 92%, transparent);
+  border: 1px solid var(--color-scope-line);
+  border-radius: 5px;
+  backdrop-filter: blur(3px);
+  box-shadow: 0 1px 0 color-mix(in oklab, #fff 3%, transparent) inset,
+    0 8px 24px -18px #000;
+}
+/* accented panels get a hairline of phosphor along the top edge */
+.panel-accent {
+  border-top-color: color-mix(in oklab, var(--color-phosphor) 45%, var(--color-scope-line));
+  box-shadow: 0 -1px 0 var(--glow-soft) inset, 0 8px 24px -18px #000;
+}
+
+.panel-head {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-ink-dim);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+}
+
+.hairline {
+  border-top: 1px solid var(--color-scope-line);
+}
+
+/* Scanline sheen for the banner / hero — subtle CRT reference. */
+.scanlines {
+  position: relative;
+}
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    rgba(0, 0, 0, 0.16) 3px
+  );
+  mix-blend-mode: multiply;
+  border-radius: inherit;
+}
+
+/* blinking cursor / armed indicator */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.armed-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* ── reactive data motion ── */
+/* brief accent wash when a live value changes (stat tiles) */
+@keyframes data-flash {
+  0% { background: var(--glow-soft); }
+  100% { background: transparent; }
+}
+.flash-accent {
+  animation: data-flash 0.9s ease-out;
+}
+/* red wash when a new threat lands */
+@keyframes alert-flash {
+  0% { background: color-mix(in oklab, var(--color-alert) 22%, transparent); }
+  100% { background: transparent; }
+}
+.flash-alert {
+  animation: alert-flash 1.1s ease-out;
+}
+
+/* ── spectrum-analyzer motion ── */
+@keyframes scope-sweep {
+  0% { transform: translateX(-8%); opacity: 0; }
+  8% { opacity: 0.7; }
+  92% { opacity: 0.7; }
+  100% { transform: translateX(108%); opacity: 0; }
+}
+@keyframes scope-flicker {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+.scope-sweep {
+  animation: scope-sweep 5.5s linear infinite;
+}
+.scope-bar {
+  animation: scope-flicker 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .armed-dot,
+  .scope-bar,
+  .flash-accent,
+  .flash-alert { animation: none; }
+  .scope-sweep { animation: none; opacity: 0; }
+}
+
+/* thin scope scrollbars */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--color-scope-bg); }
+::-webkit-scrollbar-thumb {
+  background: var(--color-scope-line);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-phosphor-dim); }
+
+/* data tables */
+.data-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.8rem; }
+.data-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--color-ink-mute);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-scope-line);
+  position: sticky;
+  top: 0;
+  background: var(--color-scope-panel);
+  z-index: 1;
+}
+.data-table td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-scope-line) 55%, transparent);
+  color: var(--color-ink);
+  white-space: nowrap;
+}
+.data-table tbody tr { transition: background 0.12s ease; }
+.data-table tbody tr:hover { background: var(--glow-soft); }
+
+:focus-visible {
+  outline: 2px solid var(--color-phosphor);
+  outline-offset: 2px;
+}

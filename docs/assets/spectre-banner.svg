@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="240" viewBox="0 0 1000 240" font-family="'SFMono-Regular','JetBrains Mono',Consolas,monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d141c"/>
+      <stop offset="1" stop-color="#080b0f"/>
+    </linearGradient>
+    <linearGradient id="phos" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#35e0c4"/>
+      <stop offset="1" stop-color="#1c8a79"/>
+    </linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
+      <path d="M26 0H0V26" fill="none" stroke="#16222e" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1000" height="240" fill="url(#bg)"/>
+  <rect width="1000" height="240" fill="url(#grid)" opacity="0.6"/>
+  <rect x="8" y="8" width="984" height="224" fill="none" stroke="#1e2a35" rx="4"/>
+
+  <!-- top bracket -->
+  <text x="34" y="52" fill="#35e0c4" font-size="15" letter-spacing="3" filter="url(#glow)">&#9556;&#9552;[ SPECTRE ]&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9557;</text>
+
+  <!-- wordmark -->
+  <text x="30" y="128" fill="url(#phos)" font-size="72" font-weight="700" letter-spacing="14" filter="url(#glow)">SPECTRE</text>
+  <text x="34" y="162" fill="#8598a6" font-size="14.5" letter-spacing="3">Signal Processing &#183; Electromagnetic Threat Reconnaissance Engine</text>
+
+  <!-- band meters -->
+  <text x="34" y="196" fill="#5b6b78" font-size="13">band</text>
+  <text x="80" y="196" fill="#35e0c4" font-size="13" font-weight="600">2.4G</text>
+  <text x="125" y="196" fill="#35e0c4" font-size="13" filter="url(#glow)">&#9619;&#9619;&#9619;&#9619;&#9619;&#9619;&#9619;&#9619;&#9619;&#9617;&#9617;&#9617;&#9617;&#9617;</text>
+  <text x="280" y="196" fill="#5b6b78" font-size="13">ch-hop 1&#8594;13</text>
+  <text x="400" y="196" fill="#9b8cff" font-size="13" font-weight="600">5G</text>
+  <text x="430" y="196" fill="#9b8cff" font-size="13" filter="url(#glow)">&#9619;&#9619;&#9619;&#9619;&#9619;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617;</text>
+  <text x="585" y="196" fill="#5b6b78" font-size="13">ch-hop 36&#8594;165</text>
+  <circle cx="905" cy="191" r="4" fill="#35e0c4" filter="url(#glow)"/>
+  <text x="918" y="196" fill="#35e0c4" font-size="13" letter-spacing="2">ARMED</text>
+
+  <!-- bottom uplink -->
+  <text x="34" y="222" fill="#5b6b78" font-size="12.5"><tspan fill="#1c8a79">&#9560;&#9552;</tspan> streaming threats + summaries to wazuh <tspan fill="#8598a6">10.0.0.20:514/udp</tspan> &#183; RFC 5424</text>
+</svg>
