@@ -33,3 +33,6 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# graphify knowledge graph output
+graphify-out/
