@@ -1,6 +1,8 @@
 # Secrets & runtime config
 .env
 *.env.local
+.env.bak*
+*.bak-*
 
 # Data (SQLite DB, captures, logs)
 /data/

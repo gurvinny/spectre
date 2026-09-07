@@ -48,6 +48,12 @@ Set `SPECTRE_SOURCE=sim` to drive the live pipeline from the simulator (backgrou
 bands + rotating `deauth_flood → evil_twin → beacon_flood → probe_flood` injections), or
 `SPECTRE_SOURCE=replay` with `REPLAY_FILE=/data/capture.txt`.
 
+## Test
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"   # 3 tests, no pip install needed
+```
+
 ## Ingest sources
 
 | `SPECTRE_SOURCE` | Behaviour |
