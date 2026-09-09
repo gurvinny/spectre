@@ -423,4 +423,8 @@ If you host a modified version, the AGPL requires you to publish your changes un
 
 <div align="center">
   <sub>SPECTRE · Signal Processing &amp; Electromagnetic Threat Reconnaissance Engine</sub>
+  <br/><br/>
+  <sub>Part of a security portfolio — see
+  <a href="https://github.com/gurvinny/security-analyst-portfolio">security-analyst-portfolio</a>
+  for the investigations, detection logic and incident-response playbooks alongside this project.</sub>
 </div>
