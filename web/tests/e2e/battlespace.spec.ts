@@ -14,6 +14,7 @@ import {
   readContextLost,
   isMeaningfulError,
   measureCanvas,
+  webglCanvasIndex,
 } from "./helpers";
 
 const PASSWORD = "ci-browser-qa-password";
@@ -34,15 +35,14 @@ test("battlespace draws a real frame and keeps its WebGL context", async ({ page
 
   await page.goto("/battlespace", { waitUntil: "networkidle" });
 
-  const canvas = page.locator("canvas").first();
-  await expect(canvas, "the r3f canvas should mount").toBeVisible();
+  await expect(page.locator("canvas").first(), "a canvas should mount").toBeVisible();
 
-  const glOk = await page.evaluate(() => {
-    const c = document.querySelector("canvas");
-    if (!c) return false;
-    return Boolean(c.getContext("webgl2") || c.getContext("webgl"));
-  });
-  expect(glOk, "canvas should have a WebGL context").toBe(true);
+  // The layout mounts a 2D Starfield canvas on every page, so it is the first
+  // canvas in the DOM. Pick the one that actually owns a WebGL context.
+  const idx = await webglCanvasIndex(page);
+  expect(idx, "a canvas with a WebGL context should exist").toBeGreaterThanOrEqual(0);
+  const canvas = page.locator("canvas").nth(idx);
+  await expect(canvas, "the r3f canvas should be visible").toBeVisible();
 
   // The error boundary renders a readable message instead of a white canvas
   // when the scene throws. Its presence is a hard failure.

@@ -60,6 +60,31 @@ export function isMeaningfulError(text: string): boolean {
   return !benign.some((re) => re.test(text));
 }
 
+/**
+ * Index of the first canvas that owns a WebGL context.
+ *
+ * Do NOT reach for `canvas` first-match: these apps mount decorative 2D
+ * canvases (a starfield background, waveform strips) ahead of the 3D one in
+ * the DOM, so the first canvas is usually the wrong one. Measuring it would
+ * report a confident pass against something that is not the scene under test.
+ *
+ * Probing with getContext is safe here because every canvas on the page has
+ * already been initialised; a 2D canvas simply answers null.
+ */
+export async function webglCanvasIndex(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const all = Array.from(document.querySelectorAll("canvas"));
+    for (let i = 0; i < all.length; i++) {
+      try {
+        if (all[i].getContext("webgl2") || all[i].getContext("webgl")) return i;
+      } catch {
+        /* a 2D canvas can throw rather than return null */
+      }
+    }
+    return -1;
+  });
+}
+
 export type CanvasStats = { width: number; height: number; distinctColors: number; nonBlankRatio: number };
 
 /**
