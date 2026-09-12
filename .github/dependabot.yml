@@ -13,11 +13,11 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
-      # One PR for routine minor/patch churn; majors stay separate so a
-      # breaking bump is always reviewed on its own.
-      web-minor-patch:
+      # Patch only. A grouped PR does not expose per-dependency versions to
+      # fetch-metadata, so the 0.x rule cannot be applied inside a group --
+      # minors therefore arrive individually where they can be judged.
+      patch:
         update-types:
-          - minor
           - patch
 
   # Sensor API layer (the ingest/detect/storage core is stdlib-only)
