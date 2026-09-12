@@ -50,7 +50,7 @@ jobs:
           SPECTRE_DB: ${{ runner.temp }}/spectre-ci.db
           API_PORT: "8100"
           WAZUH_ENABLED: "false"
-          LOG_LEVEL: warning
+          LOG_LEVEL: WARNING
         run: |
           python -m uvicorn spectre.main:app --host 127.0.0.1 --port 8100 \
             > "${{ runner.temp }}/sensor.log" 2>&1 &
