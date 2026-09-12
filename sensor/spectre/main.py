@@ -25,7 +25,10 @@ from .reader import build_readers
 from .store import Store
 
 logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO"),
+    # basicConfig only accepts the canonical upper-case names, while uvicorn
+    # wants them lower-case. Normalise here so LOG_LEVEL=warning does not
+    # crash the process at import.
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("spectre")
 
