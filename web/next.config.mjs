@@ -7,6 +7,9 @@ const nextConfig = {
   // Standalone output for a small Docker runtime image.
   output: "standalone",
   reactStrictMode: true,
+  // No route uses next/image, so disabling the optimizer removes the
+  // /_next/image endpoint and the sharp codec path from the attack surface.
+  images: { unoptimized: true },
   // Allow the dev server to be reached over the LAN host IP (cross-origin dev).
   allowedDevOrigins: ["10.0.0.10"],
   env: {
