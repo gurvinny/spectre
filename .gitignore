@@ -38,3 +38,9 @@ Thumbs.db
 
 # graphify knowledge graph output
 graphify-out/
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/playwright/.cache/

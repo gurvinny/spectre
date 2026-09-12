@@ -1,0 +1,116 @@
+# Browser QA
+# Author: gurvinny
+#
+# The web unit suite covers layout, model and quality logic as pure functions,
+# so it stays green even when nothing draws. next build proves the bundle
+# compiles, not that the scene renders. This drives a real browser against a
+# real sensor instead.
+#
+# Advisory for now: reports on every PR but is not a required status check.
+# Promote it into the ruleset once it has proven stable.
+name: Browser QA
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  API_BASE: http://127.0.0.1:8100
+
+jobs:
+  e2e:
+    name: Browser QA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install sensor dependencies
+        run: pip install -r sensor/requirements.txt
+
+      # Simulator mode: no hardware, no serial ports, but the real ingest,
+      # detection, storage and API path. A throwaway database in the runner
+      # temp dir means the setup wizard starts from a clean state.
+      - name: Start the sensor in simulator mode
+        working-directory: sensor
+        env:
+          SPECTRE_SOURCE: sim
+          SPECTRE_DB: ${{ runner.temp }}/spectre-ci.db
+          API_PORT: "8100"
+          WAZUH_ENABLED: "false"
+          LOG_LEVEL: warning
+        run: |
+          python -m uvicorn spectre.main:app --host 127.0.0.1 --port 8100 \
+            > "${{ runner.temp }}/sensor.log" 2>&1 &
+          echo $! > "${{ runner.temp }}/sensor.pid"
+
+      - name: Wait for the sensor to answer
+        run: |
+          for i in $(seq 1 40); do
+            if curl -fsS "$API_BASE/health" >/dev/null 2>&1; then
+              echo "sensor up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "sensor did not become healthy; log follows:" >&2
+          cat "${{ runner.temp }}/sensor.log" >&2 || true
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      # NEXT_PUBLIC_API_BASE is inlined into the client bundle at build time,
+      # so it has to be set here rather than at run time.
+      - name: Build
+        working-directory: web
+        env:
+          NEXT_PUBLIC_API_BASE: ${{ env.API_BASE }}
+        run: npm run build
+
+      - name: Run browser QA
+        working-directory: web
+        env:
+          NEXT_PUBLIC_API_BASE: ${{ env.API_BASE }}
+        run: npm run test:e2e
+
+      - name: Sensor log
+        if: ${{ failure() }}
+        run: tail -100 "${{ runner.temp }}/sensor.log" || true
+
+      - name: Upload report and failure screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-qa-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Stop the sensor
+        if: ${{ always() }}
+        run: kill "$(cat "${{ runner.temp }}/sensor.pid")" 2>/dev/null || true
