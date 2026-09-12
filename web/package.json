@@ -13,14 +13,14 @@
     "test": "node scripts/test.mjs"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.7",
+    "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.6.1",
     "clsx": "^2.1.1",
     "echarts": "^5.6.0",
     "lucide-react": "^0.454.0",
     "next": "^15.5.21",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tailwind-merge": "^2.6.0",
     "three": "^0.171.0"
   },
@@ -31,10 +31,10 @@
     "fflate": "^0.8.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.0.0",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "@types/three": "^0.171.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0"
