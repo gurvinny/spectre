@@ -1,0 +1,48 @@
+# SPECTRE — automated dependency updates
+# Author: gurvinny
+#
+# Security updates are enabled repo-side; this adds scheduled version updates so
+# dependencies do not drift into an advisory in the first place.
+version: 2
+
+updates:
+  # SOC console (Next.js / React / three.js)
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine minor/patch churn; majors stay separate so a
+      # breaking bump is always reviewed on its own.
+      web-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Sensor API layer (the ingest/detect/storage core is stdlib-only)
+  - package-ecosystem: pip
+    directory: /sensor
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  # Container base images
+  - package-ecosystem: docker
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: docker
+    directory: /sensor
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+
+  # Workflow actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
