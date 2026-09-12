@@ -1,7 +1,7 @@
 {
   "name": "spectre-web",
   "version": "0.1.0",
-  "description": "SPECTRE \u2014 WiFi threat sensor SOC console",
+  "description": "SPECTRE — WiFi threat sensor SOC console",
   "author": "gurvinny",
   "license": "AGPL-3.0-or-later",
   "private": true,
@@ -22,8 +22,7 @@
     "next": "^15.5.21",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tailwind-merge": "^2.6.0",
-    "three": "^0.171.0"
+    "tailwind-merge": "^2.6.0"
   },
   "overrides": {
     "postcss": "^8.5.28",
@@ -38,9 +37,10 @@
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "@types/three": "^0.171.0",
+    "@types/three": "^0.185.4",
     "pngjs": "^7.0.0",
     "tailwindcss": "^4.0.0",
+    "three": "^0.186.0",
     "typescript": "^5.7.0"
   }
 }
