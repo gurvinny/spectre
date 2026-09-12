@@ -1,0 +1,66 @@
+# Trivy vulnerability and misconfiguration scanning
+# Author: gurvinny
+#
+# Covers the gap CodeQL leaves: CodeQL analyses source, not container base
+# images or Dockerfile configuration. Findings upload to the Security tab
+# alongside the CodeQL ones.
+name: Trivy
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    - cron: "41 5 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  repo:
+    name: Trivy repository scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dependency vulnerabilities, Dockerfile misconfiguration and any
+      # committed credential shapes, in one pass over the tree.
+      - name: Scan filesystem
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          format: sarif
+          output: trivy-fs.sarif
+          # Report rather than fail: the Security tab is the signal, and a
+          # base-image CVE with no patch available should not block a merge.
+          exit-code: "0"
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  images:
+    name: Trivy base image scan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The base images the two Dockerfiles pin. Scanned directly so a CVE
+        # in the base is visible without building either image.
+        image: [ "node:20-slim", "python:3.11-slim" ]
+    steps:
+      - name: Scan ${{ matrix.image }}
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}
+          severity: CRITICAL,HIGH
+          format: table
+          exit-code: "0"
