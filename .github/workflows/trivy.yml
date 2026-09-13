@@ -23,7 +23,7 @@ jobs:
     name: Trivy repository scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Dependency vulnerabilities, Dockerfile misconfiguration and any
       # committed credential shapes, in one pass over the tree.
