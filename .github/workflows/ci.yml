@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# Least privilege: this workflow only ever reads the repository.
+permissions:
+  contents: read
+
 jobs:
   sensor-test:
     name: Sensor Unit Tests

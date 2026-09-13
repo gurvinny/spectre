@@ -40,13 +40,36 @@ execFileSync(
     "--format=esm",
     "--platform=node",
     `--alias:@=${srcDir}`,
+    // Pin the output layout to src/. Without this esbuild derives a base from
+    // whatever inputs happen to exist, so adding one test outside the deepest
+    // shared directory silently relocates every other bundle.
+    `--outbase=${srcDir}`,
     `--outdir=${outDir}`,
     "--out-extension:.js=.mjs",
   ],
   { stdio: "inherit", cwd: webRoot },
 );
 
-const bundles = readdirSync(outDir)
-  .filter((n) => n.endsWith(".test.mjs"))
-  .map((n) => join(outDir, n));
+function findBundles(dir) {
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...findBundles(p));
+    else if (name.endsWith(".test.mjs")) out.push(p);
+  }
+  return out;
+}
+
+const bundles = findBundles(outDir);
+
+// A bundle count below the source count means tests were dropped rather than
+// run. That failure is otherwise silent -- the suite just reports fewer passes.
+if (bundles.length !== tests.length) {
+  console.error(
+    `expected ${tests.length} test bundles, found ${bundles.length} -- ` +
+      "some tests would not have run",
+  );
+  process.exit(1);
+}
+
 execFileSync("node", ["--test", ...bundles], { stdio: "inherit" });
