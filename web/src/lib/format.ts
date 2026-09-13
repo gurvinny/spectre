@@ -76,9 +76,13 @@ export function fmtUptime(seconds: number): string {
 export function channelsFromFrames(
   frames: { ch: number | null }[],
 ): Record<string, number> {
-  const out: Record<string, number> = {};
+  // Null-prototype map plus an integer guard. The channel arrives as JSON from
+  // the sensor, so its TypeScript type is not a runtime guarantee, and indexing
+  // a plain object with an unvalidated key is a prototype-pollution shape.
+  // The sensor does coerce ch with _as_int, but that control is invisible here.
+  const out: Record<string, number> = Object.create(null);
   for (const f of frames) {
-    if (f.ch === null || f.ch === undefined) continue;
+    if (!Number.isInteger(f.ch as number)) continue;
     const k = String(f.ch);
     out[k] = (out[k] ?? 0) + 1;
   }
@@ -90,10 +94,10 @@ export function countByChannel(
   frames: { ch: number | null; ts: number }[],
   sinceTs: number,
 ): Record<number, number> {
-  const out: Record<number, number> = {};
+  const out: Record<number, number> = Object.create(null);
   for (const f of frames) {
-    if (f.ch == null || f.ts < sinceTs) continue;
-    out[f.ch] = (out[f.ch] ?? 0) + 1;
+    if (!Number.isInteger(f.ch as number) || f.ts < sinceTs) continue;
+    out[f.ch as number] = (out[f.ch as number] ?? 0) + 1;
   }
   return out;
 }

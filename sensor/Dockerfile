@@ -24,4 +24,9 @@ USER spectre
 
 EXPOSE 8100
 
+# Mirrors the compose healthcheck so the image is self-describing when run
+# without compose.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8100/health',timeout=3).status==200 else sys.exit(1)"
+
 CMD ["python", "-m", "spectre.main"]
