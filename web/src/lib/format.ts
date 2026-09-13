@@ -82,8 +82,13 @@ export function channelsFromFrames(
   // The sensor does coerce ch with _as_int, but that control is invisible here.
   const out: Record<string, number> = Object.create(null);
   for (const f of frames) {
-    if (!Number.isInteger(f.ch as number)) continue;
-    const k = String(f.ch);
+    // Reject null first: Number(null) is 0, so coercing it would silently
+    // record a missing channel as channel 0. Then coerce -- a cast would
+    // satisfy the compiler while leaving the runtime value unchecked.
+    if (f.ch == null) continue;
+    const ch = Number(f.ch);
+    if (!Number.isInteger(ch)) continue;
+    const k = String(ch);
     out[k] = (out[k] ?? 0) + 1;
   }
   return out;
@@ -96,8 +101,10 @@ export function countByChannel(
 ): Record<number, number> {
   const out: Record<number, number> = Object.create(null);
   for (const f of frames) {
-    if (!Number.isInteger(f.ch as number) || f.ts < sinceTs) continue;
-    out[f.ch as number] = (out[f.ch as number] ?? 0) + 1;
+    if (f.ch == null) continue;          // Number(null) is 0, not "no channel"
+    const ch = Number(f.ch);
+    if (!Number.isInteger(ch) || f.ts < sinceTs) continue;
+    out[ch] = (out[ch] ?? 0) + 1;
   }
   return out;
 }
