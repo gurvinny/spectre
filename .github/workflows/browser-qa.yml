@@ -68,7 +68,7 @@ jobs:
           cat "${{ runner.temp }}/sensor.log" >&2 || true
           exit 1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
