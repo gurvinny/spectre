@@ -76,10 +76,19 @@ export function fmtUptime(seconds: number): string {
 export function channelsFromFrames(
   frames: { ch: number | null }[],
 ): Record<string, number> {
-  const out: Record<string, number> = {};
+  // Null-prototype map plus an integer guard. The channel arrives as JSON from
+  // the sensor, so its TypeScript type is not a runtime guarantee, and indexing
+  // a plain object with an unvalidated key is a prototype-pollution shape.
+  // The sensor does coerce ch with _as_int, but that control is invisible here.
+  const out: Record<string, number> = Object.create(null);
   for (const f of frames) {
-    if (f.ch === null || f.ch === undefined) continue;
-    const k = String(f.ch);
+    // Reject null first: Number(null) is 0, so coercing it would silently
+    // record a missing channel as channel 0. Then coerce -- a cast would
+    // satisfy the compiler while leaving the runtime value unchecked.
+    if (f.ch == null) continue;
+    const ch = Number(f.ch);
+    if (!Number.isInteger(ch)) continue;
+    const k = String(ch);
     out[k] = (out[k] ?? 0) + 1;
   }
   return out;
@@ -90,10 +99,12 @@ export function countByChannel(
   frames: { ch: number | null; ts: number }[],
   sinceTs: number,
 ): Record<number, number> {
-  const out: Record<number, number> = {};
+  const out: Record<number, number> = Object.create(null);
   for (const f of frames) {
-    if (f.ch == null || f.ts < sinceTs) continue;
-    out[f.ch] = (out[f.ch] ?? 0) + 1;
+    if (f.ch == null) continue;          // Number(null) is 0, not "no channel"
+    const ch = Number(f.ch);
+    if (!Number.isInteger(ch) || f.ts < sinceTs) continue;
+    out[ch] = (out[ch] ?? 0) + 1;
   }
   return out;
 }
