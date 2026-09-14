@@ -3,6 +3,11 @@
 #
 # Advanced setup (a committed workflow) rather than GitHub's default setup, to
 # keep the scan configuration in the repo alongside ci.yml.
+#
+# `actions` covers the workflow files themselves. It was missing until now, so
+# every workflow in this repo -- including the ones holding write permissions
+# and the Dependabot auto-merge gate -- was unscanned while the application
+# code around them was not.
 name: CodeQL
 
 on:
@@ -26,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ javascript-typescript, python ]
+        language: [ javascript-typescript, python, actions ]
 
     steps:
       - name: Checkout
