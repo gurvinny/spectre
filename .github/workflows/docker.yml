@@ -1,0 +1,207 @@
+# Docker build & smoke
+# Author: gurvinny
+#
+# The rest of CI runs the code on the runner's own Python and Node. Nothing
+# previously built either image, so a base-image bump could not be judged at
+# all: a one-line FROM change carries all of its risk at build time, and every
+# other check passes without touching it. Trivy scans the published base images
+# pulled from the registry, not an image built from these Dockerfiles.
+#
+# This builds both images from the real Dockerfiles, runs them, waits for the
+# HEALTHCHECK each image declares, and exercises the API and the console. That
+# makes a node or python major bump decidable on evidence instead of held on
+# policy forever.
+#
+# `docker compose up` deliberately is NOT used: the sensor service requires
+# /dev/ttyUSB0 and /dev/ttyUSB1 passed through, and Docker errors on a missing
+# device, so compose cannot start on a runner. The sensor is run directly with
+# SPECTRE_SOURCE=sim, which is the same path CONTRIBUTING.md documents for
+# hardware-free development.
+name: Docker
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sensor-image:
+    name: Sensor image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The build itself is the first real assertion: it proves the pinned base
+      # can still resolve and install requirements.txt. A python major bump
+      # fails here or nowhere.
+      - name: Build
+        run: docker build -t spectre-sensor:ci ./sensor
+
+      - name: Report the base image actually used
+        run: |
+          echo "FROM line in sensor/Dockerfile:"
+          grep -m1 '^FROM' sensor/Dockerfile
+          docker run --rm --entrypoint python spectre-sensor:ci -c \
+            'import sys; print("python in image:", sys.version)'
+
+      - name: Run with the simulated source
+        run: |
+          docker run -d --name sensor \
+            -e SPECTRE_SOURCE=sim \
+            -p 8100:8100 \
+            spectre-sensor:ci
+
+      # Poll the container's own HEALTHCHECK rather than sleeping. The
+      # healthcheck is part of the image contract and is otherwise never
+      # executed by CI -- an image whose healthcheck can never pass looks
+      # perfectly fine to a build.
+      - name: Wait for the declared healthcheck
+        run: |
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' sensor 2>/dev/null || echo missing)
+            echo "attempt $i: $status"
+            case "$status" in
+              healthy) exit 0 ;;
+              unhealthy) echo "::error::container reported unhealthy"; docker logs sensor; exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::healthcheck never reported healthy within 120s"
+          docker logs sensor
+          docker inspect -f '{{json .State.Health}}' sensor
+          exit 1
+
+      # 127.0.0.1 rather than localhost throughout: localhost also resolves to
+      # ::1, and a server bound to IPv4 only is unreachable that way.
+      - name: Smoke the API
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/health -w '%{http_code}' http://127.0.0.1:8100/health)
+          echo "GET /health -> $code"; cat /tmp/health; echo
+          test "$code" = "200"
+
+          code=$(curl -sS -o /tmp/status -w '%{http_code}' http://127.0.0.1:8100/api/status)
+          echo "GET /api/status -> $code"; cat /tmp/status; echo
+          test "$code" = "200"
+
+      - name: Confirm it runs unprivileged
+        run: |
+          uid=$(docker exec sensor id -u)
+          echo "runtime uid: $uid"
+          test "$uid" = "10001"
+
+      - name: Confirm the pipeline really ingests inside the image
+        run: |
+          set -euo pipefail
+          # A container that boots and answers /health can still be parsing
+          # nothing. The simulator drives the real parser, so a rising frame
+          # count is what proves ingest -> pipeline -> store works *inside the
+          # image*, not merely on the runner.
+          #
+          # /api/frames requires a session, and this is a first run, so the
+          # setup wizard is the honest way in -- which also exercises the
+          # setup + session path end to end.
+          sleep 15
+
+          code=$(curl -sS -c /tmp/jar -o /tmp/setup -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d '{"password":"ci-smoke-password"}' \
+            http://127.0.0.1:8100/api/setup)
+          echo "POST /api/setup -> $code"; cat /tmp/setup; echo
+          test "$code" = "200"
+
+          code=$(curl -sS -b /tmp/jar -o /tmp/frames -w '%{http_code}' \
+            'http://127.0.0.1:8100/api/frames?limit=50')
+          echo "GET /api/frames -> $code"
+          test "$code" = "200"
+
+          count=$(python3 -c 'import json,sys; print(len(json.load(open("/tmp/frames"))["frames"]))')
+          echo "frames stored: $count"
+          test "$count" -gt 0
+
+      - name: Container logs
+        if: ${{ !cancelled() }}
+        run: docker logs sensor
+
+      - name: Tear down
+        if: ${{ always() }}
+        run: docker rm -f sensor || true
+
+  web-image:
+    name: Web image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Proves npm install and `next build` still succeed inside the pinned
+      # base, which the CI job's own setup-node run cannot tell you.
+      - name: Build
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_API_BASE=http://127.0.0.1:8100 \
+            -t spectre-web:ci ./web
+
+      - name: Report the base image actually used
+        run: |
+          echo "FROM lines in web/Dockerfile:"
+          grep '^FROM' web/Dockerfile
+          docker run --rm --entrypoint node spectre-web:ci -e 'console.log("node in image:", process.version)'
+
+      - name: Run
+        run: docker run -d --name web -p 4100:3000 spectre-web:ci
+
+      - name: Wait for the declared healthcheck
+        run: |
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' web 2>/dev/null || echo missing)
+            echo "attempt $i: $status"
+            case "$status" in
+              healthy) exit 0 ;;
+              unhealthy) echo "::error::container reported unhealthy"; docker logs web; exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::healthcheck never reported healthy within 120s"
+          docker logs web
+          exit 1
+
+      - name: Smoke the console
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/index.html -w '%{http_code}' http://127.0.0.1:4100/)
+          echo "GET / -> $code"
+          test "$code" = "200"
+
+          # A Next standalone server that boots but serves an empty shell is the
+          # failure a status code cannot see, so assert the document actually
+          # carries the app's own markup.
+          grep -qi "<html" /tmp/index.html
+          test "$(wc -c < /tmp/index.html)" -gt 1000
+
+          # And that the build inlined the API base it was given, since that is
+          # baked into the client bundle at build time and silently wrong
+          # otherwise.
+          grep -q "127.0.0.1:8100" /tmp/index.html \
+            || echo "::warning::API base not found in the initial document (may be in a client chunk)"
+
+      - name: Confirm it runs unprivileged
+        run: |
+          uid=$(docker exec web id -u)
+          echo "runtime uid: $uid"
+          test "$uid" = "10001"
+
+      - name: Container logs
+        if: ${{ !cancelled() }}
+        run: docker logs web
+
+      - name: Tear down
+        if: ${{ always() }}
+        run: docker rm -f web || true

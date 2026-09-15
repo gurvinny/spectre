@@ -17,7 +17,14 @@ RUN npm run build
 
 FROM node:20-slim AS runner
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
+# HOSTNAME=0.0.0.0 is required, not cosmetic. Next's standalone server.js binds
+# to process.env.HOSTNAME, and Docker sets HOSTNAME to the container id -- so
+# without this the server listens on the container's eth0 address ALONE.
+# Published ports still work, because Docker forwards to that address, which is
+# why this hides easily. But 127.0.0.1:3000 inside the container is unreachable,
+# so the HEALTHCHECK below can never pass and every orchestrator sees the
+# container as permanently unhealthy.
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 RUN useradd --uid 10001 --create-home spectre
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=spectre:spectre /app/.next/standalone ./
