@@ -26,7 +26,7 @@
 [![SQLite](https://img.shields.io/badge/SQLite-WAL-F5A623.svg?style=flat-square&logo=sqlite&logoColor=white&labelColor=0a0e12)](sensor/spectre/store.py)
 [![Wazuh](https://img.shields.io/badge/Wazuh-RFC%205424-FF4D5E.svg?style=flat-square&logo=wazuh&logoColor=white&labelColor=0a0e12)](docs/wazuh-integration.md)
 [![Self-Hosted](https://img.shields.io/badge/Self--Hosted-Docker-35E0C4.svg?style=flat-square&logo=docker&logoColor=white&labelColor=0a0e12)](docker-compose.yml)
-[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-35E0C4.svg?style=flat-square&logo=github&logoColor=white&labelColor=0a0e12)](CONTRIBUTING.md)
+[![Single Maintainer](https://img.shields.io/badge/Maintainer-Single--Author-9B8CFF.svg?style=flat-square&logo=github&logoColor=white&labelColor=0a0e12)](CONTRIBUTING.md)
 
 <br/>
 
@@ -420,6 +420,10 @@ Licensed under the **GNU AGPL-3.0-or-later** — see [LICENSE](LICENSE). Copyrig
 If you host a modified version, the AGPL requires you to publish your changes under the same open license.
 
 **Commercial License:** To use SPECTRE in a closed-source or commercial product without the AGPL's source-disclosure obligations, a separate commercial license is available — reach out via [github.com/gurvinny](https://github.com/gurvinny).
+
+Offering that commercial option depends on one author holding copyright in the entire codebase, which
+is why SPECTRE does not accept code contributions — see [CONTRIBUTING.md](CONTRIBUTING.md). Bug
+reports and feature requests are welcome in [Issues](../../issues).
 
 <br/>
 
