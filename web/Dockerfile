@@ -1,11 +1,11 @@
 # SPECTRE web image (Next.js standalone)
 # Author: gurvinny
-FROM node:20-slim AS deps
+FROM node:26-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --no-audit --no-fund
 
-FROM node:20-slim AS builder
+FROM node:26-slim AS builder
 WORKDIR /app
 # NEXT_PUBLIC_API_BASE is inlined into the client bundle at build time.
 ARG NEXT_PUBLIC_API_BASE=http://localhost:8100
@@ -15,7 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:20-slim AS runner
+FROM node:26-slim AS runner
 WORKDIR /app
 # HOSTNAME=0.0.0.0 is required, not cosmetic. Next's standalone server.js binds
 # to process.env.HOSTNAME, and Docker sets HOSTNAME to the container id -- so
