@@ -1,6 +1,6 @@
 # SPECTRE sensor image
 # Author: gurvinny
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Unbuffered logs; no .pyc clutter.
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
