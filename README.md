@@ -259,6 +259,16 @@ Verified live from the hardware — each UART line follows this strict format:
 
 ---
 
+## ✦ Authorized Use
+
+SPECTRE operates a WiFi interface in promiscuous mode and captures 802.11 frame metadata from
+every network in radio range, including networks you do not own. In many jurisdictions that is
+lawful only on infrastructure you own or have written permission to test.
+
+Run it on your own network, on hardware you own, or under an explicit engagement scope. You are
+responsible for your own compliance. The project ships no capability for decrypting traffic or
+recovering credentials, and forwards threat summaries rather than raw frames by design.
+
 ## ✦ Quick Start
 
 ```bash
