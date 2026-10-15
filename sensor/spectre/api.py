@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
+from collections import deque
 
 from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
                      WebSocket, WebSocketDisconnect)
@@ -27,19 +29,78 @@ log = logging.getLogger("spectre.api")
 ADMIN = "admin"
 SESSION_COOKIE = "spectre_session"
 SESSION_TTL = 7 * 24 * 3600
+MIN_PASSWORD = 12
+
+# Failed password attempts allowed per client address inside the window before
+# further attempts are refused with 429. Counted for login and password change.
+LOGIN_MAX_FAILURES = 5
+LOGIN_WINDOW_SECONDS = 15 * 60
+
+DEFAULT_WEB_ORIGINS = "http://localhost:4100,http://127.0.0.1:4100"
 
 
-def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
+def web_origins() -> list[str]:
+    """Browser origins allowed to call the API with the session cookie.
+
+    Comma-separated in ``SPECTRE_WEB_ORIGINS``; the compose file derives it
+    from ``HOST_IP`` and ``WEB_PORT``. Never a wildcard: a credentialed
+    wildcard makes the browser hand the session to any origin that asks.
+    """
+    raw = os.environ.get("SPECTRE_WEB_ORIGINS") or DEFAULT_WEB_ORIGINS
+    return [o.strip().rstrip("/") for o in raw.split(",") if o.strip() and o.strip() != "*"]
+
+
+def _clamp(value: int, upper: int) -> int:
+    """Bound a client-supplied row limit. SQLite reads LIMIT -1 as unlimited."""
+    return max(1, min(value, upper))
+
+
+class FailureLimiter:
+    """In-memory sliding window of failed password attempts per client."""
+
+    def __init__(self, max_failures: int = LOGIN_MAX_FAILURES,
+                 window: float = LOGIN_WINDOW_SECONDS) -> None:
+        self.max_failures = max_failures
+        self.window = window
+        self._fails: dict[str, deque[float]] = {}
+
+    def _recent(self, key: str, now: float) -> deque[float]:
+        q = self._fails.setdefault(key, deque())
+        while q and q[0] <= now - self.window:
+            q.popleft()
+        return q
+
+    def retry_after(self, key: str, now: float | None = None) -> int:
+        """Seconds until *key* may try again, or 0 if it is not blocked."""
+        now = time.time() if now is None else now
+        q = self._recent(key, now)
+        if len(q) < self.max_failures:
+            return 0
+        return max(1, int(q[0] + self.window - now) + 1)
+
+    def fail(self, key: str, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        self._recent(key, now).append(now)
+
+    def reset(self, key: str) -> None:
+        self._fails.pop(key, None)
+
+
+def create_app(store: Store, config: Config, pipeline: Pipeline,
+               origins: list[str] | None = None) -> FastAPI:
     app = FastAPI(title="SPECTRE", version=__version__)
+    allowed = set(origins if origins is not None else web_origins())
+    limiter = FailureLimiter()
+    app.state.limiter = limiter
 
-    # The browser talks to the API cross-origin (different port); allow it and
-    # send credentials so the session cookie flows.
+    # The browser talks to the API cross-origin (different port), with the
+    # session cookie, so only the console's own origin(s) may do so.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=sorted(allowed),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["content-type"],
     )
 
     # ── auth helpers ───────────────────────────────────────────────────
@@ -57,6 +118,22 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
         response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL,
                             httponly=True, samesite="lax")
 
+    def client_key(request: Request) -> str:
+        return request.client.host if request.client else "unknown"
+
+    def check_password(request: Request, password: str, row: dict | None) -> bool:
+        """Verify under the failure limiter; raises 429 while a client is blocked."""
+        key = client_key(request)
+        wait = limiter.retry_after(key)
+        if wait:
+            raise HTTPException(status_code=429, detail="too many attempts",
+                                headers={"Retry-After": str(wait)})
+        if row and verify_password(password, row["pwd_hash"], row["salt"]):
+            limiter.reset(key)
+            return True
+        limiter.fail(key)
+        return False
+
     # ── public / gate ──────────────────────────────────────────────────
     @app.get("/health")
     def health() -> dict:
@@ -71,9 +148,10 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
         if store.has_users():
             raise HTTPException(status_code=409, detail="already set up")
         password = (body or {}).get("password") or ""
-        if len(password) < 6:
-            raise HTTPException(status_code=400,
-                                detail="password must be at least 6 characters")
+        if len(password) < MIN_PASSWORD:
+            raise HTTPException(
+                status_code=400,
+                detail=f"password must be at least {MIN_PASSWORD} characters")
         pwd_hash, salt = hash_password(password)
         store.upsert_user(ADMIN, pwd_hash, salt)
         # Optional initial config from the wizard.
@@ -84,10 +162,10 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/login")
-    def login(body: dict, response: Response) -> dict:
+    def login(body: dict, request: Request, response: Response) -> dict:
         user = store.get_user(ADMIN)
         password = (body or {}).get("password") or ""
-        if not user or not verify_password(password, user["pwd_hash"], user["salt"]):
+        if not check_password(request, password, user):
             raise HTTPException(status_code=401, detail="invalid password")
         issue_session(response, ADMIN)
         return {"ok": True}
@@ -101,14 +179,17 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/password")
-    def change_password(body: dict, user: str = Depends(current_user)) -> dict:
+    def change_password(body: dict, request: Request,
+                        user: str = Depends(current_user)) -> dict:
         row = store.get_user(user)
         old = (body or {}).get("current") or ""
         new = (body or {}).get("new") or ""
-        if not row or not verify_password(old, row["pwd_hash"], row["salt"]):
+        if not check_password(request, old, row):
             raise HTTPException(status_code=401, detail="current password wrong")
-        if len(new) < 6:
-            raise HTTPException(status_code=400, detail="new password too short")
+        if len(new) < MIN_PASSWORD:
+            raise HTTPException(
+                status_code=400,
+                detail=f"new password must be at least {MIN_PASSWORD} characters")
         pwd_hash, salt = hash_password(new)
         store.upsert_user(user, pwd_hash, salt)
         return {"ok": True}
@@ -121,7 +202,7 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
     @app.get("/api/frames")
     def frames(limit: int = 200, band: str | None = None,
                type: str | None = None, user: str = Depends(current_user)) -> dict:
-        return {"frames": store.recent_frames(min(limit, 1000), band, type)}
+        return {"frames": store.recent_frames(_clamp(limit, 1000), band, type)}
 
     def _inv_window(kind: str, scope: str) -> tuple[float | None, float | None]:
         """Translate a scope into (since, until) last_seen bounds.
@@ -140,22 +221,22 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
     def devices(limit: int = 500, scope: str = "active",
                 user: str = Depends(current_user)) -> dict:
         since, until = _inv_window("device", scope)
-        return {"devices": store.list_devices(min(limit, 2000), since, until)}
+        return {"devices": store.list_devices(_clamp(limit, 2000), since, until)}
 
     @app.get("/api/access-points")
     def access_points(limit: int = 500, scope: str = "active",
                       user: str = Depends(current_user)) -> dict:
         since, until = _inv_window("ap", scope)
-        return {"access_points": store.list_aps(min(limit, 2000), since, until)}
+        return {"access_points": store.list_aps(_clamp(limit, 2000), since, until)}
 
     @app.get("/api/search")
     def search(q: str = "", limit: int = 20,
                user: str = Depends(current_user)) -> dict:
-        return {"results": store.search(q, min(max(limit, 1), 50))}
+        return {"results": store.search(q, _clamp(limit, 50))}
 
     @app.get("/api/threats")
     def threats(limit: int = 200, user: str = Depends(current_user)) -> dict:
-        return {"threats": store.list_threats(min(limit, 1000))}
+        return {"threats": store.list_threats(_clamp(limit, 1000))}
 
     @app.get("/api/channels")
     def channels(user: str = Depends(current_user)) -> dict:
@@ -164,7 +245,7 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
 
     @app.get("/api/summaries")
     def summaries(limit: int = 120, user: str = Depends(current_user)) -> dict:
-        return {"summaries": store.recent_summaries(min(limit, 500))}
+        return {"summaries": store.recent_summaries(_clamp(limit, 500))}
 
     # ── settings ───────────────────────────────────────────────────────
     @app.get("/api/settings")
@@ -232,8 +313,12 @@ def create_app(store: Store, config: Config, pipeline: Pipeline) -> FastAPI:
     # ── live feed ──────────────────────────────────────────────────────
     @app.websocket("/ws")
     async def ws_feed(ws: WebSocket) -> None:
+        # Browsers always send Origin on a WebSocket handshake and CORS does
+        # not apply to it, so the allowlist has to be enforced here.
+        origin = (ws.headers.get("origin") or "").rstrip("/")
         token = ws.cookies.get(SESSION_COOKIE)
-        if not token or not store.get_session(token):
+        if (origin and origin not in allowed) or not token \
+                or not store.get_session(token):
             await ws.close(code=1008)  # policy violation
             return
         await ws.accept()

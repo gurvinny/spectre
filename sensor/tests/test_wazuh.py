@@ -44,6 +44,10 @@ class TestFormatting(unittest.TestCase):
         self.assertEqual(_sd({"ssid": 'a"b\\c]d'}).split(" ", 1)[1],
                          'ssid="a\\"b\\\\c\\]d"]')
 
+    def test_sd_id_is_name_at_enterprise_number(self):
+        # RFC 5424 section 7.2.2: a private SD-ID is "name@<private enterprise number>".
+        self.assertTrue(_sd({"band": "5GHz"}).startswith("[spectre@32473 "))
+
     def test_sd_drops_none_and_is_nil_when_empty(self):
         self.assertNotIn("bssid", _sd({"band": "5GHz", "bssid": None}))
         self.assertEqual(_sd({"x": None}), "-")

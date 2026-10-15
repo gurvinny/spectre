@@ -79,8 +79,7 @@ class TestFrames(StoreCase):
         self.store.insert_frames([frame(now - 30 * 60, type="BEACON")])
         with mock.patch.object(self.store, "_disk_used_percent", return_value=99.0):
             report = self.store.prune(raw_retention_hours=48, disk_guard_percent=85)
-        self.assertGreaterEqual(report["window_hours"], 0.75)
-        self.assertLess(report["window_hours"], 1.5)
+        self.assertEqual(report["window_hours"], 1.0)
         self.assertEqual(len(self.store.recent_frames()), 1)
 
 

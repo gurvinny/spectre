@@ -583,7 +583,7 @@ class Store:
         window_h = raw_retention_hours
         guard_deleted = 0
         while used_pct >= disk_guard_percent and window_h > 1:
-            window_h /= 2
+            window_h = max(1.0, window_h / 2)
             guard_deleted += self._delete_frames_before(time.time() - window_h * 3600)
             used_pct = self._disk_used_percent()
 

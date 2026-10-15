@@ -49,7 +49,7 @@ def _sd(pairs: dict) -> str:
         items.append(f'{k}="{s}"')
     if not items:
         return "-"
-    return f"[{ENTERPRISE_ID}@spectre " + " ".join(items) + "]"
+    return f"[spectre@{ENTERPRISE_ID} " + " ".join(items) + "]"
 
 
 class WazuhForwarder:

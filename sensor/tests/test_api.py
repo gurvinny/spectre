@@ -7,12 +7,17 @@ from _support import TempDir, UdpSink, frame
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from spectre.api import SESSION_COOKIE, create_app
+from unittest import mock
+
+from spectre.api import (DEFAULT_WEB_ORIGINS, MIN_PASSWORD, SESSION_COOKIE,
+                         FailureLimiter, create_app, web_origins)
 from spectre.config import Config
 from spectre.pipeline import Pipeline
 from spectre.store import Store
 
 PASSWORD = "correct-horse-battery"
+CONSOLE = "http://console.test:4100"
+OTHER = "http://other.test:9999"
 ROGUE = "00:00:5E:00:53:66"
 AP = "00:00:5E:00:53:01"
 
@@ -31,7 +36,8 @@ class ApiCase(unittest.TestCase):
         self.cfg.set("wazuh_host", "127.0.0.1")
         self.cfg.set("wazuh_port", self.sink.port)
         self.pipe = Pipeline(self.store, self.cfg)
-        self.client = TestClient(create_app(self.store, self.cfg, self.pipe))
+        self.app = create_app(self.store, self.cfg, self.pipe, origins=[CONSOLE])
+        self.client = TestClient(self.app)
 
     def tearDown(self):
         self.client.close()
@@ -219,6 +225,121 @@ class TestWebSocket(ApiCase):
         self.assertEqual(msg["type"], "snapshot")
         self.assertIn("total_frames", msg["overview"])
         self.assertEqual(self.pipe.subscribers, set())  # unsubscribed on close
+
+
+class TestOrigins(ApiCase):
+
+    def test_console_origin_is_allowed_with_credentials(self):
+        self.setup_admin()
+        r = self.client.get("/api/overview", headers={"Origin": CONSOLE})
+        self.assertEqual(r.headers.get("access-control-allow-origin"), CONSOLE)
+        self.assertEqual(r.headers.get("access-control-allow-credentials"), "true")
+
+    def test_other_origins_get_no_cors_grant(self):
+        self.setup_admin()
+        r = self.client.get("/api/overview", headers={"Origin": OTHER})
+        self.assertIsNone(r.headers.get("access-control-allow-origin"))
+        pre = self.client.options("/api/overview", headers={
+            "Origin": OTHER, "Access-Control-Request-Method": "GET"})
+        self.assertIsNone(pre.headers.get("access-control-allow-origin"))
+
+    def test_websocket_from_another_origin_is_refused_even_with_a_session(self):
+        self.setup_admin()
+        with self.assertRaises(WebSocketDisconnect) as cm:
+            with self.client.websocket_connect("/ws", headers={"Origin": OTHER}) as ws:
+                ws.receive_json()
+        self.assertEqual(cm.exception.code, 1008)
+        with self.client.websocket_connect("/ws", headers={"Origin": CONSOLE}) as ws:
+            self.assertEqual(ws.receive_json()["type"], "snapshot")
+
+    def test_origins_come_from_the_environment_and_never_a_wildcard(self):
+        with mock.patch.dict("os.environ", {"SPECTRE_WEB_ORIGINS":
+                                            " http://a.test:1/ ,*, http://b.test:2"}):
+            self.assertEqual(web_origins(), ["http://a.test:1", "http://b.test:2"])
+        with mock.patch.dict("os.environ", {"SPECTRE_WEB_ORIGINS": ""}):
+            self.assertEqual(web_origins(), DEFAULT_WEB_ORIGINS.split(","))
+
+
+class TestPasswordPolicy(ApiCase):
+
+    def test_setup_requires_the_minimum_length(self):
+        short = self.client.post("/api/setup", json={"password": "x" * (MIN_PASSWORD - 1)})
+        self.assertEqual(short.status_code, 400)
+        ok = self.client.post("/api/setup", json={"password": "x" * MIN_PASSWORD})
+        self.assertEqual(ok.status_code, 200)
+
+    def test_new_password_requires_the_minimum_length(self):
+        self.setup_admin()
+        r = self.client.post("/api/password", json={"current": PASSWORD,
+                                                    "new": "y" * (MIN_PASSWORD - 1)})
+        self.assertEqual(r.status_code, 400)
+
+
+class TestLoginThrottle(ApiCase):
+
+    def setUp(self):
+        super().setUp()
+        self.setup_admin()
+        self.client.cookies.clear()
+
+    def login(self, password):
+        return self.client.post("/api/login", json={"password": password})
+
+    def test_sixth_failure_in_the_window_is_refused_even_with_the_right_password(self):
+        codes = [self.login("wrong-%d" % i).status_code for i in range(5)]
+        self.assertEqual(codes, [401] * 5)
+        blocked = self.login(PASSWORD)
+        self.assertEqual(blocked.status_code, 429)
+        self.assertGreater(int(blocked.headers["retry-after"]), 0)
+        self.assertIsNone(self.client.cookies.get(SESSION_COOKIE))
+
+    def test_success_resets_the_count(self):
+        for i in range(4):
+            self.login("wrong-%d" % i)
+        self.assertEqual(self.login(PASSWORD).status_code, 200)
+        self.client.cookies.clear()
+        codes = [self.login("again-%d" % i).status_code for i in range(5)]
+        self.assertEqual(codes, [401] * 5)
+
+    def test_password_change_failures_count_too(self):
+        self.login(PASSWORD)
+        for i in range(5):
+            self.client.post("/api/password", json={"current": "bad-%d" % i,
+                                                    "new": "z" * MIN_PASSWORD})
+        r = self.client.post("/api/password", json={"current": PASSWORD,
+                                                    "new": "z" * MIN_PASSWORD})
+        self.assertEqual(r.status_code, 429)
+
+
+class TestFailureLimiter(unittest.TestCase):
+
+    def test_window_slides(self):
+        lim = FailureLimiter(max_failures=3, window=60)
+        for t in (0, 10, 20):
+            lim.fail("ip", now=t)
+        self.assertEqual(lim.retry_after("ip", now=30), 31)
+        self.assertEqual(lim.retry_after("ip", now=61), 0)  # first failure aged out
+        self.assertEqual(lim.retry_after("other", now=30), 0)
+
+    def test_reset_clears(self):
+        lim = FailureLimiter(max_failures=1, window=60)
+        lim.fail("ip", now=0)
+        lim.reset("ip")
+        self.assertEqual(lim.retry_after("ip", now=1), 0)
+
+
+class TestLimits(ApiCase):
+
+    def test_negative_limits_cannot_unbound_a_query(self):
+        self.setup_admin()
+        t = time.time()
+        self.store.insert_frames([frame(t, type="BEACON") for _ in range(5)])
+        for ts in range(3):
+            self.store.insert_summary({"ts": ts})
+        self.assertEqual(len(self.client.get("/api/frames?limit=-1").json()["frames"]), 1)
+        self.assertEqual(len(self.client.get("/api/summaries?limit=-1").json()
+                             ["summaries"]), 1)
+        self.assertEqual(len(self.client.get("/api/frames?limit=0").json()["frames"]), 1)
 
 
 if __name__ == "__main__":
