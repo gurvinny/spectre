@@ -35,7 +35,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Install sensor dependencies
         run: pip install -r sensor/requirements.txt

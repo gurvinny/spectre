@@ -54,7 +54,7 @@ jobs:
       matrix:
         # The base images the two Dockerfiles pin. Scanned directly so a CVE
         # in the base is visible without building either image.
-        image: [ "node:20-slim", "python:3.11-slim" ]
+        image: [ "node:20-slim", "python:3.14-slim" ]
     steps:
       - name: Scan ${{ matrix.image }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

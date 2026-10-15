@@ -19,7 +19,7 @@
 [![Browser QA](https://img.shields.io/github/actions/workflow/status/gurvinny/spectre/browser-qa.yml?branch=main&style=flat-square&label=Browser%20QA&labelColor=0a0e12&color=35E0C4)](../../actions/workflows/browser-qa.yml)
 [![Version](https://img.shields.io/badge/Version-0.1.0-35E0C4.svg?style=flat-square&labelColor=0a0e12)](#)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-35E0C4.svg?style=flat-square&logo=gnu&logoColor=white&labelColor=0a0e12)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11-35E0C4.svg?style=flat-square&logo=python&logoColor=white&labelColor=0a0e12)](sensor/)
+[![Python](https://img.shields.io/badge/Python-3.14-35E0C4.svg?style=flat-square&logo=python&logoColor=white&labelColor=0a0e12)](sensor/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-35E0C4.svg?style=flat-square&logo=fastapi&logoColor=white&labelColor=0a0e12)](sensor/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-C9D6DF.svg?style=flat-square&logo=nextdotjs&logoColor=white&labelColor=0a0e12)](web/)
 [![Tailwind](https://img.shields.io/badge/Tailwind-v4-9B8CFF.svg?style=flat-square&logo=tailwindcss&logoColor=white&labelColor=0a0e12)](web/)
@@ -157,7 +157,7 @@ Two services configured elegantly via a single `docker-compose.yml`:
 
 | Service | Stack | Port | Role |
 |---|---|---|---|
-| `sensor` | Python 3.11 · FastAPI · SQLite (stdlib core) | `8100` | UART ingest, detection, storage, Wazuh forwarding, API + WebSocket |
+| `sensor` | Python 3.14 · FastAPI · SQLite (stdlib core) | `8100` | UART ingest, detection, storage, Wazuh forwarding, API + WebSocket |
 | `web` | Next.js 15 · Tailwind v4 · ECharts · three / react-three-fiber | `4100` | The SOC console |
 
 ```mermaid

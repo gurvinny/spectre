@@ -1,6 +1,6 @@
 # SPECTRE · sensor
 
-[![Python](https://img.shields.io/badge/Python-3.11-35E0C4.svg?style=flat-square&logo=python&logoColor=white&labelColor=0a0e12)](.)
+[![Python](https://img.shields.io/badge/Python-3.14-35E0C4.svg?style=flat-square&logo=python&logoColor=white&labelColor=0a0e12)](.)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-35E0C4.svg?style=flat-square&logo=fastapi&logoColor=white&labelColor=0a0e12)](.)
 [![stdlib core](https://img.shields.io/badge/core-stdlib%20only-8598A6.svg?style=flat-square&labelColor=0a0e12)](.)
 

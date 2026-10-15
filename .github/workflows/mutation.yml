@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install dependencies
         run: pip install -r sensor/requirements-dev.txt
       - name: Run mutation catalogues
