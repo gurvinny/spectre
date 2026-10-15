@@ -9,7 +9,7 @@ export const MUTATIONS = [
    "    const k = String(ch);", "channelsFromFrames ignores a non-integer channel"],
   ["prototype-map-restored", "  const out: Record<string, number> = Object.create(null);\n  for (const f of frames) {\n    // Reject",
    "  const out: Record<string, number> = {};\n  for (const f of frames) {\n    // Reject",
-   "channelsFromFrames ignores a non-integer channel"],
+   "channelsFromFrames cannot reach Object.prototype"],
   ["waterfall-window-ignored", "if (!Number.isInteger(ch) || f.ts < sinceTs) continue;",
    "if (!Number.isInteger(ch)) continue;", "countByChannel respects the time window and skips null"],
   ["strength-not-clamped-low", "return Math.max(0, Math.min(1, (rssi + 90) / 60));",

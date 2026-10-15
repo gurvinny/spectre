@@ -9,6 +9,6 @@ export const MUTATIONS = [
   ["no-hot-second-pulse", "if (tier === \"high\" && (e.activity ?? 0) >= 0.6) {", "if (false) {", "high tier: hot edge (>=0.6) gets a second, phase-offset pulse"],
   ["second-pulse-same-phase", "phase: (phase + 0.5) % 1,", "phase,", "high tier: hot edge (>=0.6) gets a second, phase-offset pulse"],
   ["unsorted-by-activity", ".sort((a, b) => (b.e.activity ?? 0) - (a.e.activity ?? 0));", ";", "mesh edges are tagged and sorted with assoc by activity"],
-  ["cap-ignored", "    if (pulses.length >= cap) break;\n    if (tier", "    if (tier", "pulses are capped at PULSE_LIMIT"],
+  ["cap-ignored", "    if (pulses.length >= cap) break;\n    // High tier", "    // High tier", "pulses are capped at PULSE_LIMIT"],
 ];
 export const SURVIVORS = {};

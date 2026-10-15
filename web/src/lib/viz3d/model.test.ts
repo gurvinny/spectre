@@ -110,6 +110,8 @@ test("deriveAttackBeams: skips broadcast target", () => {
     detail: { target_dst: "FF:FF:FF:FF:FF:FF" },
   };
   assert.equal(deriveAttackBeams([t], nodes(AP), NOW).length, 0);
+  // Even if a broadcast address ever reached the scene, no beam may target it.
+  assert.equal(deriveAttackBeams([t], nodes(AP, "FF:FF:FF:FF:FF:FF"), NOW).length, 0);
 });
 
 test("deriveAttackBeams: skips off-scene endpoints", () => {

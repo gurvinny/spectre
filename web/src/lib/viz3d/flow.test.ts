@@ -15,6 +15,8 @@ test("pulseFrac wraps within [0,1)", () => {
   assert.ok(Math.abs(pulseFrac(1, 0, 2) - 0.5) < 1e-9);
   const f = pulseFrac(5.9, 0.3, 2);
   assert.ok(f >= 0 && f < 1);
+  // Negative time (clock skew between frames) must still land in [0,1).
+  assert.ok(Math.abs(pulseFrac(-1, 0, 2) - 0.5) < 1e-9);
 });
 
 test("pulsePos lerps endpoints", () => {
@@ -54,6 +56,8 @@ test("pulses are capped at PULSE_LIMIT", () => {
   const many: EdgeModel[] = Array.from({ length: 200 }, (_, i) =>
     edge("c" + i, "ap", 0.9),
   );
-  const p = pulsesForEdges(many, [], "high");
-  assert.ok(p.length <= PULSE_LIMIT);
+  assert.equal(pulsesForEdges(many, [], "high").length, PULSE_LIMIT);
+  assert.equal(pulsesForEdges(many, [], "med").length, PULSE_LIMIT);
+  // An odd cap lands between an edge's two pulses; the first check must hold it.
+  assert.equal(pulsesForEdges(many, [], "high", 5).length, 5);
 });

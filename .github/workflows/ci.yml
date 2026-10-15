@@ -26,12 +26,14 @@ jobs:
         run: |
           cd sensor
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
+      # Shuffled across three seeds, every test file must contribute tests, and
+      # the test and assertion counts must stay above the floors in the script.
       - name: Run sensor tests
         run: |
           cd sensor
-          python -m unittest discover -s tests -p "test_*.py"
+          python scripts/run_tests.py
 
   web-test:
     name: Web Console Tests & Build

@@ -1,0 +1,45 @@
+name: Mutation
+
+# Report-only for now: proves the unit tests can fail by breaking the code on
+# purpose and checking the claiming test goes red. Not a required check yet.
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sensor:
+    name: Sensor mutation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r sensor/requirements-dev.txt
+      - name: Run mutation catalogues
+        run: python sensor/scripts/mutate.py
+
+  web:
+    name: Web mutation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd web
+          npm ci
+      - name: Run mutation catalogues
+        run: |
+          cd web
+          npm run test:mutate
