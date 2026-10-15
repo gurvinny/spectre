@@ -41,7 +41,7 @@ on the allowlist** fires `critical`; the same SSID on an unexpected band fires `
 - **New device**: first-seen non-AP client MAC → `low`. Randomized (locally-administered) MACs are
   **muted by default** (they're constant and expected); enable `alert_randomized_devices` to include
   them.
-- **RSSI jump**: a station's RSSI changing by ≥ `rssi_jump_db` (default 35) between observations →
+- **RSSI jump**: a station's RSSI changing by ≥ `rssi_jump_db` (default 55) between observations →
   `low`. Possible spoofing / proximity change.
 
 ## Tuning notes

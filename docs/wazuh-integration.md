@@ -38,21 +38,20 @@ Point SPECTRE at the manager in **Settings** (or `.env`): `WAZUH_HOST=10.0.0.20`
   <program_name>spectre</program_name>
 </decoder>
 
-<!-- Pull the fields we care about straight out of the JSON body. -->
+<!-- One child decoder pulls every field out of the JSON body, in the order the sensor writes them.
+     PCRE2 because Wazuh's default OS_Regex has no character classes. -->
 <decoder name="spectre-fields">
   <parent>spectre</parent>
-  <regex offset="after_parent">"rule":"(\w+)".+"severity":"(\w+)".+"title":"([^"]+)"</regex>
-  <order>spectre.rule,spectre.severity,spectre.title</order>
-</decoder>
-
-<decoder name="spectre-band">
-  <parent>spectre</parent>
-  <regex>band="([^"]+)"</regex>
-  <order>spectre.band</order>
+  <regex type="pcre2">"rule":"(\w+)","severity":"(\w+)","rank":\d+,"title":"((?:[^"\\]|\\.)*)","band":"((?:[^"\\]|\\.)*)"</regex>
+  <order>spectre.rule,spectre.severity,spectre.title,spectre.band</order>
 </decoder>
 ```
 
 ## Rules — `/var/ossec/etc/rules/spectre_rules.xml`
+
+The severity rules set the alert level. The detection rules below them refine one detection each
+and carry its ATT&CK technique, so a technique is never inferred from severity alone (two
+detections share `high`).
 
 ```xml
 <group name="spectre,wireless,">
@@ -63,38 +62,89 @@ Point SPECTRE at the manager in **Settings** (or `.env`): `WAZUH_HOST=10.0.0.20`
 
   <rule id="100601" level="12">
     <if_sid>100600</if_sid>
-    <field name="spectre.severity">critical</field>
+    <field name="spectre.severity">^critical$</field>
     <description>SPECTRE: $(spectre.title)</description>
-    <mitre><id>T1557</id></mitre> <!-- Adversary-in-the-Middle (evil twin) -->
   </rule>
 
   <rule id="100602" level="10">
     <if_sid>100600</if_sid>
-    <field name="spectre.severity">high</field>
+    <field name="spectre.severity">^high$</field>
     <description>SPECTRE: $(spectre.title)</description>
-    <mitre><id>T1499</id></mitre> <!-- Endpoint DoS (deauth flood) -->
   </rule>
 
   <rule id="100603" level="7">
     <if_sid>100600</if_sid>
-    <field name="spectre.severity">medium</field>
+    <field name="spectre.severity">^medium$</field>
     <description>SPECTRE: $(spectre.title)</description>
   </rule>
 
   <rule id="100604" level="4">
     <if_sid>100600</if_sid>
-    <field name="spectre.severity">low</field>
+    <field name="spectre.severity">^low$</field>
     <description>SPECTRE: $(spectre.title)</description>
+  </rule>
+
+  <rule id="100610" level="12">
+    <if_sid>100601</if_sid>
+    <field name="spectre.rule">^evil_twin$</field>
+    <description>SPECTRE evil twin: $(spectre.title)</description>
+    <mitre><id>T1557</id></mitre>
+  </rule>
+
+  <rule id="100611" level="10">
+    <if_sid>100602</if_sid>
+    <field name="spectre.rule">^evil_twin$</field>
+    <description>SPECTRE rogue AP on unexpected band: $(spectre.title)</description>
+    <mitre><id>T1557</id></mitre>
+  </rule>
+
+  <rule id="100612" level="10">
+    <if_sid>100602</if_sid>
+    <field name="spectre.rule">^deauth_flood$</field>
+    <description>SPECTRE deauth flood: $(spectre.title)</description>
+    <mitre><id>T1499</id></mitre>
+  </rule>
+
+  <rule id="100613" level="7">
+    <if_sid>100603</if_sid>
+    <field name="spectre.rule">^beacon_probe_flood$</field>
+    <field name="spectre.title" type="pcre2">^Beacon flood</field>
+    <description>SPECTRE beacon flood: $(spectre.title)</description>
+    <mitre><id>T1498</id></mitre>
+  </rule>
+
+  <rule id="100614" level="7">
+    <if_sid>100603</if_sid>
+    <field name="spectre.rule">^beacon_probe_flood$</field>
+    <field name="spectre.title" type="pcre2">^Probe-request flood</field>
+    <description>SPECTRE probe-request flood: $(spectre.title)</description>
+    <mitre><id>T1595</id></mitre>
   </rule>
 </group>
 ```
 
+## MITRE ATT&CK mapping
+
+ATT&CK Enterprise has no 802.11-specific techniques, so each detection maps to the closest
+technique for what the attacker gains, not for the radio mechanism.
+
+| Detection | Wazuh rule | Technique | Tactic | Why |
+|---|---|---|---|---|
+| Evil twin (`evil_twin`, critical) | 100610 | T1557 Adversary-in-the-Middle | Credential Access, Collection | A cloned SSID from an unknown BSSID exists to pull clients through the attacker's AP. |
+| Rogue AP on unexpected band (`evil_twin`, high) | 100611 | T1557 Adversary-in-the-Middle | Credential Access, Collection | A known SSID on a band it is pinned away from is the same cloned-AP setup, seen by band instead of BSSID. |
+| Deauth / disassoc flood (`deauth_flood`) | 100612 | T1499 Endpoint Denial of Service | Impact | Forged management frames knock clients off their AP. Also the usual first step of a handshake capture or an evil twin. |
+| Beacon flood (`beacon_probe_flood`) | 100613 | T1498 Network Denial of Service | Impact | Hundreds of fabricated APs bury the real ones in every client's network list. |
+| Probe-request flood (`beacon_probe_flood`) | 100614 | T1595 Active Scanning | Reconnaissance | A probe burst makes every AP in range answer with its SSID and capabilities. |
+| RSSI jump (`anomaly`, low) | none | none | | A sharp signal change fits spoofing, a device moving, or multipath. It is an indicator to investigate, not an adversary behaviour, and the spoofing case is already covered by the evil-twin rules. |
+| New device (`anomaly`, low/info) | none | none | | Inventory awareness. A new MAC on the air is not by itself an attack. |
+
 Restart the manager (`systemctl restart wazuh-manager`) and test with
 `/var/ossec/bin/wazuh-logtest`, pasting a captured line.
 
-> **Version note:** RFC 5424 predecoding varies across Wazuh versions. The regex decoders above key
-> off the JSON body (the most stable part) rather than the syslog header, so they work regardless of
-> how the manager predecodes the 5424 frame. On Wazuh ≥ 4.x you can alternatively use the
-> `JSON_Decoder` plugin if you strip the structured-data element first.
+> **Version note:** RFC 5424 predecoding varies across Wazuh versions. The decoder above keys off
+> the JSON body (the most stable part) rather than the syslog header, so it works regardless of how
+> the manager predecodes the 5424 frame. It needs a manager with PCRE2 support (`type="pcre2"`).
+> `sensor/tests/test_wazuh_docs.py` checks these blocks against real sensor output, but it models
+> Wazuh's matching in Python: `wazuh-logtest` on your manager is the final word.
 
 _Author: gurvinny · Project: SPECTRE_
