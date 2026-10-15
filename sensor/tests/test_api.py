@@ -263,9 +263,12 @@ class TestOrigins(ApiCase):
 class TestPasswordPolicy(ApiCase):
 
     def test_setup_requires_the_minimum_length(self):
-        short = self.client.post("/api/setup", json={"password": "x" * (MIN_PASSWORD - 1)})
+        # The policy is stated here, not read from the module, so lowering the
+        # constant is a failing test rather than a test that follows along.
+        self.assertEqual(MIN_PASSWORD, 12)
+        short = self.client.post("/api/setup", json={"password": "x" * 11})
         self.assertEqual(short.status_code, 400)
-        ok = self.client.post("/api/setup", json={"password": "x" * MIN_PASSWORD})
+        ok = self.client.post("/api/setup", json={"password": "x" * 12})
         self.assertEqual(ok.status_code, 200)
 
     def test_new_password_requires_the_minimum_length(self):
