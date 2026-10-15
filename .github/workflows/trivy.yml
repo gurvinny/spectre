@@ -81,5 +81,8 @@ jobs:
           image-ref: ${{ matrix.image }}
           severity: CRITICAL,HIGH
           format: table
+          # Report only. Bare base images carry fixable findings in packages the
+          # shipped images remove or upgrade (npm, pip tooling, Debian updates),
+          # so the gate is on the built images in docker.yml, not here.
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
