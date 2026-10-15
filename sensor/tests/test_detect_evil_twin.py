@@ -25,7 +25,8 @@ class TestEvilTwin(unittest.TestCase):
         self.rule.set_known_networks(list(rows))
 
     def test_without_an_allowlist_nothing_fires(self):
-        self.assertEqual(self.rule.process(beacon(1, ROGUE)), [])
+        self.assertEqual(self.rule.process(beacon(1, GOOD)), [])
+        self.assertEqual(self.rule.process(beacon(2, ROGUE)), [])
 
     def test_allowed_bssid_is_silent(self):
         self.allow({"ssid": "ExampleNet", "bssid": GOOD})

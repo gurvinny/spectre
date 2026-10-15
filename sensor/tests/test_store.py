@@ -90,10 +90,20 @@ class TestInventory(StoreCase):
         self.store.upsert_devices([device("AA:00:00:00:00:01", 100,
                                           min_rssi=-70, max_rssi=-40)])
         self.store.upsert_devices([device("AA:00:00:00:00:01", 200, first_seen=200,
-                                          min_rssi=-80, max_rssi=-60, frames=9)])
+                                          min_rssi=-60, max_rssi=-50, frames=9)])
+        self.store.upsert_devices([device("AA:00:00:00:00:01", 300, first_seen=300,
+                                          min_rssi=-90, max_rssi=-30, frames=12)])
         [row] = self.store.list_devices(since=None)
         self.assertEqual((row["first_seen"], row["last_seen"], row["min_rssi"],
-                          row["max_rssi"], row["frames"]), (100, 200, -80, -40, 9))
+                          row["max_rssi"], row["frames"]), (100, 300, -90, -30, 12))
+
+    def test_device_upsert_never_narrows_the_rssi_range(self):
+        self.store.upsert_devices([device("AA:00:00:00:00:01", 100,
+                                          min_rssi=-70, max_rssi=-40)])
+        self.store.upsert_devices([device("AA:00:00:00:00:01", 200,
+                                          min_rssi=-60, max_rssi=-50)])
+        [row] = self.store.list_devices()
+        self.assertEqual((row["min_rssi"], row["max_rssi"]), (-70, -40))
 
     def test_ap_upsert_overwrites_live_fields(self):
         self.store.upsert_aps([ap("00:00:5E:00:53:01", 100)])
@@ -241,6 +251,8 @@ class TestSearch(StoreCase):
         self.store._fts = False
         self.assertEqual(self.kinds("CoffeeShop"), [("device", "2A:2F:D0:11:22:33")])
         self.assertEqual(self.kinds("Example%"), [("ap", "00:00:5E:00:53:01")])
+        # A user's "_" must not act as a LIKE single-character wildcard.
+        self.assertEqual(self.kinds("Ex_mpleNet"), [])
 
     def test_reindex_rebuilds_from_durable_tables(self):
         with self.store._lock:

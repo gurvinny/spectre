@@ -52,6 +52,12 @@ class TestConfig(unittest.TestCase):
         cfg.set("deauth_threshold", 3)
         self.assertEqual((cfg("deauth_threshold"), cfg.get("deauth_threshold")), (3, 3))
 
+    def test_missing_row_falls_back_to_defaults_not_the_callers_default(self):
+        cfg = self.make()
+        with cfg.store._lock:
+            cfg.store._db.execute("DELETE FROM config WHERE key='deauth_threshold'")
+        self.assertEqual(cfg("deauth_threshold", 999), DEFAULTS["deauth_threshold"])
+
     def test_unknown_key_uses_the_callers_default(self):
         cfg = self.make()
         self.assertEqual(cfg("no_such_key", 42), 42)

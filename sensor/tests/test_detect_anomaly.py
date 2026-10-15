@@ -80,6 +80,9 @@ class TestAnomalyRule(unittest.TestCase):
         self.assertEqual(self.feed(seen(100), seen(101, rssi=-1)), [])
 
     def test_broadcast_source_is_ignored(self):
+        # FF:.. has the locally-administered bit set, so randomized alerts must
+        # be on or the random-MAC filter would hide a broken broadcast check.
+        self.cfg.values["alert_randomized_devices"] = True
         self.assertEqual(self.feed(seen(100, mac="ff:ff:ff:ff:ff:ff")), [])
 
     # ── RSSI jump ──────────────────────────────────────────────────────

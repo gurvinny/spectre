@@ -16,7 +16,7 @@ MUTATIONS = [
      "severity_code = SEVERITY.get(t.severity, (9, 5))[1]", "severity_code = 5",
      "test_each_severity_maps_to_its_syslog_code"),
     ("disabled-still-sends",
-     'if not bool(self.cfg("wazuh_enabled", True)):\n            return False\n', "",
+     '        if not bool(self.cfg("wazuh_enabled", True)):\n            return False\n', "",
      "test_disabled_or_hostless_sends_nothing"),
     ("tcp-not-delimited",
      'self._tcp.sendall(data + b"\\n")', "self._tcp.sendall(data)",

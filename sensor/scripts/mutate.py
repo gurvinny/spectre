@@ -40,7 +40,11 @@ from pathlib import Path
 SENSOR = Path(__file__).resolve().parent.parent
 REPO = SENSOR.parent
 TIMEOUT_SECONDS = 120
-_RESULT = re.compile(r"^(test\w+) \(.*\) \.\.\. (FAIL|ERROR)$")
+# Parse the failure HEADERS ("FAIL: test_x (mod.Class.test_x)"), not the
+# verbose progress lines: code under test logs to the same stderr, so a log
+# record can land between "test_x ... " and its "FAIL" and hide the verdict.
+# That happened here and reported four real catches as SURVIVED.
+_RESULT = re.compile(r"^(?:FAIL|ERROR): (test\w+) \(")
 
 
 def export_tree(dest: Path, staged: bool) -> None:
@@ -82,7 +86,7 @@ def run_tests(work: Path, test_file: str) -> tuple[int, list[str]] | None:
         return None
     failed = []
     for line in r.stderr.splitlines():
-        m = _RESULT.match(line.strip())
+        m = _RESULT.match(line)
         if m:
             failed.append(m.group(1))
     return r.returncode, failed

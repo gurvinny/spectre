@@ -17,7 +17,7 @@ MUTATIONS = [
     ("defaults-not-consulted",
      "return self.store.get_config(key, DEFAULTS.get(key, default))",
      "return self.store.get_config(key, default)",
-     "test_unknown_key_uses_the_callers_default"),
+     "test_missing_row_falls_back_to_defaults_not_the_callers_default"),
 ]
 SURVIVORS = {
 }

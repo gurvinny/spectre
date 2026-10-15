@@ -14,7 +14,7 @@ MUTATIONS = [
     ("min-rssi-not-merged",
      "min_rssi=MIN(devices.min_rssi,excluded.min_rssi), ",
      "min_rssi=excluded.min_rssi, ",
-     "test_device_upsert_merges_rssi_range_and_keeps_first_seen"),
+     "test_device_upsert_never_narrows_the_rssi_range"),
     ("first-seen-overwritten",
      '"ON CONFLICT(mac) DO UPDATE SET "\n                    "last_seen=excluded.last_seen,',
      '"ON CONFLICT(mac) DO UPDATE SET "\n                    "first_seen=excluded.first_seen, last_seen=excluded.last_seen,',

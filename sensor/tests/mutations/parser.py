@@ -32,6 +32,10 @@ MUTATIONS = [
      "test_non_numeric_fields_become_none"),
     ("array-accepted-as-object",
      "return obj if isinstance(obj, dict) else None", "return obj",
-     "test_json_array_is_not_an_object"),
+     None),
 ]
-SURVIVORS = {}
+SURVIVORS = {
+    "array-accepted-as-object":
+        "dead guard: the slice always starts at '{', so json.loads returns a "
+        "dict or raises; kept as defence in depth, no input can reach it",
+}
