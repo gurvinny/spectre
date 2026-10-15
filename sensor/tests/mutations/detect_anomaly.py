@@ -1,0 +1,41 @@
+"""New-device and RSSI-jump anomalies."""
+TARGET = "spectre/detect/anomaly.py"
+TESTS = "tests/test_detect_anomaly.py"
+
+MUTATIONS = [
+    ("random-bit-wrong",
+     "return bool(first_octet & 0b10)", "return bool(first_octet & 0b01)",
+     "test_locally_administered_bit"),
+    ("warmup-ignored",
+     "muted = mac in self._muted\n", "muted = mac in self._muted\n        warming = False\n",
+     "test_devices_seen_during_warmup_are_learned_silently"),
+    ("new-device-alerts-config-ignored",
+     'and bool(self.cfg("new_device_alerts", False))', "",
+     "test_alerts_off_by_config"),
+    ("randomized-always-alerts",
+     'and (not random or bool(self.cfg("alert_randomized_devices", False))))',
+     ")", "test_randomized_mac_is_suppressed_by_default"),
+    ("ap-self-counted-as-device",
+     "and mac != ev.bssid\n", "\n",
+     "test_ap_transmitting_as_itself_is_not_a_new_device"),
+    ("mute-list-case-sensitive",
+     "self._muted = {m.upper() for m in macs if m}", "self._muted = {m for m in macs if m}",
+     "test_muted_device_is_silent"),
+    ("rssi-only-positive-jumps",
+     "abs(ev.rssi - prev) >= jump", "ev.rssi - prev >= jump",
+     "test_rssi_drop_counts_as_a_jump"),
+    ("rssi-threshold-off-by-one",
+     "abs(ev.rssi - prev) >= jump", "abs(ev.rssi - prev) > jump",
+     "test_rssi_jump_at_threshold_alerts_with_both_values"),
+    ("rssi-cooldown-global",
+     "last_alert = self._last_jump_alert.get(mac, 0.0)",
+     "last_alert = max(self._last_jump_alert.values(), default=0.0)",
+     "test_rssi_jump_cooldown_is_per_device"),
+    ("rssi-cooldown-ignored",
+     "and ev.received_at - last_alert >= cooldown):", "):",
+     "test_rssi_jump_cooldown_is_per_device"),
+    ("broadcast-tracked",
+     "if not mac or mac == BROADCAST_MAC:", "if not mac:",
+     "test_broadcast_source_is_ignored"),
+]
+SURVIVORS = {}

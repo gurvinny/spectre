@@ -1,8 +1,10 @@
 """RFC 5424 forwarder to Wazuh. Author: gurvinny"""
 import json
+import os
 import re
 import socket
 import threading
+import time
 import unittest
 
 from _support import UdpSink, make_cfg
@@ -25,7 +27,18 @@ def threat(**kw):
 class TestFormatting(unittest.TestCase):
 
     def test_rfc3339_is_utc_with_milliseconds(self):
-        self.assertEqual(_rfc3339(0.25), "1970-01-01T00:00:00.250Z")
+        # Force a non-UTC local zone, or a dropped tz= is invisible on a UTC host.
+        old = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        try:
+            self.assertEqual(_rfc3339(0.25), "1970-01-01T00:00:00.250Z")
+        finally:
+            if old is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = old
+            time.tzset()
 
     def test_sd_escapes_quote_backslash_and_bracket(self):
         self.assertEqual(_sd({"ssid": 'a"b\\c]d'}).split(" ", 1)[1],
