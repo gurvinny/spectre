@@ -126,7 +126,8 @@ def create_app(store: Store, config: Config, pipeline: Pipeline,
         key = client_key(request)
         wait = limiter.retry_after(key)
         if wait:
-            raise HTTPException(status_code=429, detail="too many attempts",
+            raise HTTPException(status_code=429,
+                                detail=f"too many attempts, try again in {wait}s",
                                 headers={"Retry-After": str(wait)})
         if row and verify_password(password, row["pwd_hash"], row["salt"]):
             limiter.reset(key)

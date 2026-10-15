@@ -20,7 +20,7 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (pw.length < 6) return setError("Access key must be at least 6 characters.");
+    if (pw.length < 12) return setError("Access key must be at least 12 characters.");
     if (pw !== confirm) return setError("Access keys do not match.");
     setBusy(true);
     setError(null);

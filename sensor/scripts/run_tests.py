@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TESTS = ROOT / "tests"
 
 MIN_TESTS = 157
-MIN_ASSERTIONS = 739
+MIN_ASSERTIONS = 740
 
 _asserts = 0
 

@@ -277,7 +277,7 @@ function PasswordCard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
         <Field label="Current key"><input type="password" value={cur} onChange={(e) => setCur(e.target.value)} className={inputCls} /></Field>
         <Field label="New key"><input type="password" value={nw} onChange={(e) => setNw(e.target.value)} className={inputCls} /></Field>
-        <button onClick={change} disabled={!cur || nw.length < 6} className="font-mono text-xs py-2 border border-scope-line text-ink rounded-sm hover:border-phosphor-dim disabled:opacity-40">
+        <button onClick={change} disabled={!cur || nw.length < 12} className="font-mono text-xs py-2 border border-scope-line text-ink rounded-sm hover:border-phosphor-dim disabled:opacity-40">
           Update key
         </button>
       </div>

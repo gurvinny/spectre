@@ -301,6 +301,7 @@ Everything has a sensible default in `.env` (see `.env.example`) and can be chan
 | `WAZUH_HOST` / `WAZUH_PORT` | `10.0.0.20` / `514` | Target SIEM syslog destination. |
 | `RAW_RETENTION_HOURS` | `48` | Window for rolling raw-frame retention. |
 | `DISK_GUARD_PERCENT` | `85` | Early-prune threshold to prevent full disk. |
+| `SPECTRE_WEB_ORIGINS` | `http://HOST_IP:WEB_PORT` | Browser origin(s) allowed to call the API with the session cookie, comma separated. Read on every start, not seeded. Set it when the console is served from another address, for example behind the reverse-proxy overlay. |
 
 ---
 

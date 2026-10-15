@@ -10,6 +10,10 @@ services:
     container_name: spectre-sensor
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Browser origin(s) allowed to call the API with the session cookie.
+      # Defaults to the console address built from HOST_IP and WEB_PORT.
+      SPECTRE_WEB_ORIGINS: ${SPECTRE_WEB_ORIGINS:-http://${HOST_IP:-localhost}:${WEB_PORT:-4100}}
     # Pass the USB serial adapters into the container. On an unprivileged
     # Proxmox LXC the host may also need lxc.cgroup2.devices.allow entries —
     # see docs/deployment.md.
