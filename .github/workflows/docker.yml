@@ -4,8 +4,7 @@
 # The rest of CI runs the code on the runner's own Python and Node. Nothing
 # previously built either image, so a base-image bump could not be judged at
 # all: a one-line FROM change carries all of its risk at build time, and every
-# other check passes without touching it. Trivy scans the published base images
-# pulled from the registry, not an image built from these Dockerfiles.
+# other check passes without touching it.
 #
 # This builds both images from the real Dockerfiles, runs them, waits for the
 # HEALTHCHECK each image declares, and exercises the API and the console. That
@@ -51,6 +50,19 @@ jobs:
           grep -m1 '^FROM' sensor/Dockerfile
           docker run --rm --entrypoint python spectre-sensor:ci -c \
             'import sys; print("python in image:", sys.version)'
+
+      # Gate on the image that ships, not the bare base: the Dockerfile upgrades
+      # Debian packages and strips tooling the runtime never uses, so this is
+      # where a fixable HIGH or CRITICAL finding is a real one. Findings with no
+      # upstream fix are not actionable and do not fail the build.
+      - name: Scan the built image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: spectre-sensor:ci
+          severity: CRITICAL,HIGH
+          format: table
+          ignore-unfixed: true
+          exit-code: "1"
 
       - name: Run with the simulated source
         run: |
@@ -154,6 +166,19 @@ jobs:
           echo "FROM lines in web/Dockerfile:"
           grep '^FROM' web/Dockerfile
           docker run --rm --entrypoint node spectre-web:ci -e 'console.log("node in image:", process.version)'
+
+      # Gate on the image that ships, not the bare base: the Dockerfile upgrades
+      # Debian packages and strips tooling the runtime never uses, so this is
+      # where a fixable HIGH or CRITICAL finding is a real one. Findings with no
+      # upstream fix are not actionable and do not fail the build.
+      - name: Scan the built image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: spectre-web:ci
+          severity: CRITICAL,HIGH
+          format: table
+          ignore-unfixed: true
+          exit-code: "1"
 
       - name: Run
         run: docker run -d --name web -p 4100:3000 spectre-web:ci

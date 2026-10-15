@@ -9,7 +9,14 @@ WORKDIR /app
 
 # Install deps first for better layer caching.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Take the Debian updates the base image has not picked up yet. pip is only
+# needed to install, so it is removed afterwards along with the dependencies it
+# vendors, which would otherwise ship in the runtime image unused.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y pip
 
 # Application package.
 COPY spectre ./spectre
