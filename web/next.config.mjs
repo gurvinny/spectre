@@ -11,7 +11,8 @@ const nextConfig = {
   // /_next/image endpoint and the sharp codec path from the attack surface.
   images: { unoptimized: true },
   // Allow the dev server to be reached over the LAN host IP (cross-origin dev).
-  allowedDevOrigins: ["10.0.0.10"],
+  // HOST_IP is the same value the compose stack uses; nothing is hardcoded.
+  allowedDevOrigins: process.env.HOST_IP ? [process.env.HOST_IP] : [],
   env: {
     NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8100",
   },

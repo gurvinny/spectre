@@ -9,7 +9,7 @@
     "dev": "next dev -p 4100",
     "build": "next build",
     "start": "next start -p 3000",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "test": "node scripts/test.mjs",
     "test:e2e": "playwright test",
     "test:mutate": "node scripts/mutate.mjs"
@@ -20,16 +20,15 @@
     "clsx": "^2.1.1",
     "echarts": "^6.1.0",
     "lucide-react": "^0.454.0",
-    "next": "^15.5.27",
+    "next": "^16.4.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwind-merge": "^3.7.0"
   },
   "overrides": {
     "postcss": "^8.5.28",
-    "nanoid": "^3.3.19",
-    "sharp": "^0.35.5",
-    "fflate": "^0.8.3"
+    "fflate": "^0.8.3",
+    "source-map-js": "^1.2.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
