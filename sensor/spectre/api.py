@@ -43,8 +43,8 @@ def web_origins() -> list[str]:
     """Browser origins allowed to call the API with the session cookie.
 
     Comma-separated in ``SPECTRE_WEB_ORIGINS``; the compose file derives it
-    from ``HOST_IP`` and ``WEB_PORT``. Never a wildcard: a credentialed
-    wildcard makes the browser hand the session to any origin that asks.
+    from ``HOST_IP`` and ``WEB_PORT``. Never a wildcard: credentials must
+    only ever be paired with explicitly listed origins.
     """
     raw = os.environ.get("SPECTRE_WEB_ORIGINS") or DEFAULT_WEB_ORIGINS
     return [o.strip().rstrip("/") for o in raw.split(",") if o.strip() and o.strip() != "*"]
