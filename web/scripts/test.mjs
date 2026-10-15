@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const webRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -23,18 +23,21 @@ function findTests(dir) {
   return out;
 }
 
-const tests = findTests(srcDir);
+// Optional file arguments narrow the run (the mutation runner uses this). The
+// floor below only applies to a full run.
+const only = process.argv.slice(2).map((p) => resolve(webRoot, p));
+const tests = only.length ? only : findTests(srcDir);
 if (tests.length === 0) {
   console.error("no *.test.ts files found under", srcDir);
   process.exit(1);
 }
 
 const outDir = mkdtempSync(join(tmpdir(), "bsp-test-"));
+// esbuild is a pinned devDependency. It used to come from `npx -y esbuild`,
+// which downloaded whatever version was newest at test time.
 execFileSync(
-  "npx",
+  join(webRoot, "node_modules", ".bin", "esbuild"),
   [
-    "-y",
-    "esbuild",
     ...tests,
     "--bundle",
     "--format=esm",
@@ -72,4 +75,30 @@ if (bundles.length !== tests.length) {
   process.exit(1);
 }
 
-execFileSync("node", ["--test", ...bundles], { stdio: "inherit" });
+// Raise this when tests are added. Never lower it to make a run pass: a suite
+// that silently shrinks still reports green.
+const MIN_TESTS = 33;
+
+let out = "";
+let failed = false;
+try {
+  out = execFileSync("node", ["--test", "--test-reporter=tap", ...bundles], {
+    encoding: "utf8",
+  });
+} catch (err) {
+  out = String(err.stdout ?? "");
+  failed = true;
+}
+process.stdout.write(out);
+
+const total = Number(/^# tests (\d+)$/m.exec(out)?.[1] ?? 0);
+const fails = Number(/^# fail (\d+)$/m.exec(out)?.[1] ?? 0);
+if (failed || fails > 0) process.exit(1);
+if (total === 0) {
+  console.error("no tests ran");
+  process.exit(1);
+}
+if (!only.length && total < MIN_TESTS) {
+  console.error(`ran ${total} tests, floor is ${MIN_TESTS}`);
+  process.exit(1);
+}
