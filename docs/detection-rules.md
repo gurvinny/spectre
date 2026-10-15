@@ -10,7 +10,7 @@ attack does not re-fire every frame.
 | Threat severity | UI rank | Syslog severity | PRI (local7) |
 |---|---|---|---|
 | `critical` | 1 | crit (2) | `<186>` |
-| `high` | 2 | alert (1) | `<185>` |
+| `high` | 2 | err (3) | `<187>` |
 | `medium` | 3 | warning (4) | `<188>` |
 | `low` | 4 | notice (5) | `<189>` |
 | `info` / summary | 5 | info (6) | `<190>` |

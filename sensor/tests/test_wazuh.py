@@ -81,8 +81,17 @@ class TestUdp(unittest.TestCase):
         self.assertEqual(decoded["rank"], 1)
         self.assertEqual(self.fwd.status()["sent"], 1)
 
+    def test_syslog_urgency_follows_threat_severity(self):
+        # Lower syslog code = more urgent. A less severe threat must never be
+        # sent as more urgent than a more severe one.
+        codes = []
+        for sev in ("critical", "high", "medium", "low", "info"):
+            self.fwd.send_threat(threat(severity=sev))
+            codes.append(int(LINE.match(self.sink.recv()).group(1)) - 23 * 8)
+        self.assertEqual(codes, sorted(set(codes)))
+
     def test_each_severity_maps_to_its_syslog_code(self):
-        for sev, code in (("critical", 2), ("high", 1), ("medium", 4),
+        for sev, code in (("critical", 2), ("high", 3), ("medium", 4),
                           ("low", 5), ("info", 6), ("bogus", 5)):
             self.fwd.send_threat(threat(severity=sev))
             self.assertEqual(int(LINE.match(self.sink.recv()).group(1)),

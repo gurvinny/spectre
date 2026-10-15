@@ -64,9 +64,11 @@ class Event:
 
 # ── Threat severities, mapped later to RFC 5424 syslog severities ──────
 # name -> (numeric rank for UI sorting, syslog severity code)
+# Codes must rise with rank: a SIEM sorting by syslog severity has to see
+# critical above high. (high was once 1 "alert", which outranked critical.)
 SEVERITY = {
     "critical": (1, 2),   # syslog crit
-    "high":     (2, 1),   # syslog alert
+    "high":     (2, 3),   # syslog err
     "medium":   (3, 4),   # syslog warning
     "low":      (4, 5),   # syslog notice
     "info":     (5, 6),   # syslog info
