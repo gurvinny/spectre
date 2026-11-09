@@ -29,6 +29,10 @@ on the allowlist** fires `critical`; the same SSID on an unexpected band fires `
 
 - Managed via **Settings → Known Networks**. For a mesh/multi-AP SSID, allowlist *every* legitimate
   BSSID (otherwise the others read as evil twins).
+- A band on an entry with a BSSID pins **that BSSID**; add one entry per band if a radio uses both.
+  A dual-band network lists each radio with its own band (most dual-band APs use a separate BSSID
+  per band). A band on an entry with no BSSID pins the whole SSID and applies only to BSSIDs that
+  have no pin of their own. Leave the band blank to skip the band check.
 - `evil_twin_learn` (default off) baselines the first BSSID seen per SSID when there is no allowlist
   entry — convenient, but only enable once the air is known-clean.
 

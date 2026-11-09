@@ -90,6 +90,56 @@ class TestEvilTwin(unittest.TestCase):
         self.allow({"ssid": "ExampleNet", "band": "2.4GHz"})
         self.assertEqual(self.rule.process(beacon(1, GOOD, band="2.4GHz")), [])
 
+    def test_dual_band_network_with_per_bssid_bands_is_silent(self):
+        # One radio per band, both pinned: neither is "on an unexpected band",
+        # whichever row happens to load last.
+        rows = [{"ssid": "ExampleNet", "bssid": GOOD, "band": "2.4GHz"},
+                {"ssid": "ExampleNet", "bssid": ROGUE2, "band": "5GHz"}]
+        for order in (rows, rows[::-1]):
+            self.allow(*order)
+            self.assertEqual(self.rule.process(beacon(1, GOOD, band="2.4GHz")), [])
+            self.assertEqual(self.rule.process(beacon(2, ROGUE2, band="5GHz")), [])
+
+    def test_band_pin_belongs_to_its_bssid(self):
+        self.allow({"ssid": "ExampleNet", "bssid": GOOD, "band": "2.4GHz"},
+                   {"ssid": "ExampleNet", "bssid": ROGUE2, "band": "5GHz"})
+        [t] = self.rule.process(beacon(1, GOOD, band="5GHz"))
+        self.assertEqual((t.severity, t.bssid, t.detail),
+                         ("high", GOOD, {"expected_band": "2.4GHz", "seen_band": "5GHz"}))
+        [t] = self.rule.process(beacon(2, ROGUE2, band="2.4GHz"))
+        self.assertEqual(t.detail, {"expected_band": "5GHz", "seen_band": "2.4GHz"})
+
+    def test_one_bssid_pinned_on_two_bands_is_silent_on_both(self):
+        self.allow({"ssid": "ExampleNet", "bssid": GOOD, "band": "2.4GHz"},
+                   {"ssid": "ExampleNet", "bssid": GOOD, "band": "5GHz"})
+        self.assertEqual(self.rule.process(beacon(1, GOOD, band="2.4GHz")), [])
+        self.assertEqual(self.rule.process(beacon(2, GOOD, band="5GHz")), [])
+
+    def test_unpinned_bssid_is_not_band_checked(self):
+        self.allow({"ssid": "ExampleNet", "bssid": GOOD, "band": "2.4GHz"},
+                   {"ssid": "ExampleNet", "bssid": ROGUE2})
+        self.assertEqual(self.rule.process(beacon(1, ROGUE2, band="5GHz")), [])
+
+    def test_ssid_level_bands_combine_in_learn_mode(self):
+        self.cfg.values["evil_twin_learn"] = True
+        self.allow({"ssid": "ExampleNet", "band": "2.4GHz"},
+                   {"ssid": "ExampleNet", "band": "5GHz"})
+        self.assertEqual(self.rule.process(beacon(1, GOOD, band="2.4GHz")), [])
+        self.assertEqual(self.rule.process(beacon(2, GOOD, band="5GHz")), [])
+
+    def test_ssid_level_band_pin_still_fires_in_learn_mode(self):
+        self.cfg.values["evil_twin_learn"] = True
+        self.allow({"ssid": "ExampleNet", "band": "2.4GHz"})
+        self.assertEqual(self.rule.process(beacon(1, GOOD, band="2.4GHz")), [])
+        [t] = self.rule.process(beacon(2, GOOD, band="5GHz"))
+        self.assertEqual((t.severity, t.detail),
+                         ("high", {"expected_band": "2.4GHz", "seen_band": "5GHz"}))
+
+    def test_bssid_pin_wins_over_ssid_level_pin(self):
+        self.allow({"ssid": "ExampleNet", "band": "2.4GHz"},
+                   {"ssid": "ExampleNet", "bssid": GOOD, "band": "5GHz"})
+        self.assertEqual(self.rule.process(beacon(1, GOOD, band="5GHz")), [])
+
     def test_refreshing_the_allowlist_rearms_alerts(self):
         self.allow({"ssid": "ExampleNet", "bssid": GOOD})
         self.assertEqual(len(self.rule.process(beacon(1, ROGUE))), 1)

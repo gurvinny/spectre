@@ -7,7 +7,10 @@ networks (Settings → Known Networks):
 * A beacon/probe-response advertises a **known SSID** from a **BSSID that is not
   on the allowlist** for that SSID  →  evil twin.
 * A known SSID/BSSID appears on an **unexpected band**  →  suspicious (a 2.4GHz
-  home AP suddenly beaconing on 5GHz from a new radio, etc.).
+  home AP suddenly beaconing on 5GHz from a new radio, etc.). A band on a row
+  with a BSSID pins that BSSID; rows for the same BSSID add bands, so a
+  dual-band network lists each radio with its own band. A band on a row with
+  no BSSID pins the whole SSID and applies only to BSSIDs without their own pin.
 
 If the allowlist is empty the rule can optionally *learn* the first BSSID seen
 per SSID as the baseline (``evil_twin_learn`` config) — off by default to avoid
@@ -29,8 +32,10 @@ class EvilTwin(Rule):
         super().__init__(cfg)
         # ssid -> set of allowed BSSIDs (from the allowlist)
         self._allow: dict[str, set[str]] = {}
-        # ssid -> expected band (from the allowlist, if pinned)
-        self._band: dict[str, str] = {}
+        # bssid -> expected bands (rows that name a BSSID)
+        self._bssid_bands: dict[str, set[str]] = {}
+        # ssid -> expected bands (rows with a band but no BSSID)
+        self._ssid_bands: dict[str, set[str]] = {}
         # ssid -> first-seen BSSID (learn mode baseline)
         self._learned: dict[str, str] = {}
         # avoid re-alerting for the same rogue bssid repeatedly
@@ -38,17 +43,22 @@ class EvilTwin(Rule):
 
     def set_known_networks(self, known: list[dict]) -> None:
         allow: dict[str, set[str]] = {}
-        band: dict[str, str] = {}
+        bssid_bands: dict[str, set[str]] = {}
+        ssid_bands: dict[str, set[str]] = {}
         for row in known:
             ssid = row.get("ssid")
             if not ssid:
                 continue
             bssid = (row.get("bssid") or "").upper()
+            band = row.get("band")
             if bssid:
                 allow.setdefault(ssid, set()).add(bssid)
-            if row.get("band"):
-                band[ssid] = row["band"]
-        self._allow, self._band = allow, band
+                if band:
+                    bssid_bands.setdefault(bssid, set()).add(band)
+            elif band:
+                ssid_bands.setdefault(ssid, set()).add(band)
+        self._allow = allow
+        self._bssid_bands, self._ssid_bands = bssid_bands, ssid_bands
         self._flagged.clear()
 
     def process(self, ev: Event) -> list[Threat]:
@@ -64,10 +74,7 @@ class EvilTwin(Rule):
         # Learn-mode baseline when there is no allowlist entry for this SSID.
         if allowed is None:
             if bool(self.cfg("evil_twin_learn", False)):
-                first = self._learned.setdefault(ssid, bssid)
-                if bssid == first:
-                    return []
-                allowed = {first}
+                allowed = {self._learned.setdefault(ssid, bssid)}
             else:
                 return []
 
@@ -83,15 +90,15 @@ class EvilTwin(Rule):
                         "rssi": ev.rssi, "channel": ev.ch},
             ))
 
-        expected_band = self._band.get(ssid)
-        if expected_band and ev.band != "unknown" and ev.band != expected_band \
+        expected = self._bssid_bands.get(bssid) or self._ssid_bands.get(ssid)
+        if expected and ev.band != "unknown" and ev.band not in expected \
                 and (bssid + "|band") not in self._flagged:
             self._flagged.add(bssid + "|band")
             threats.append(Threat(
                 ts=ev.received_at, rule=self.name, severity="high",
                 title=f"'{ssid}' seen on unexpected band {ev.band}",
                 band=ev.band, bssid=bssid, ssid=ssid,
-                detail={"expected_band": expected_band, "seen_band": ev.band},
+                detail={"expected_band": ",".join(sorted(expected)), "seen_band": ev.band},
             ))
 
         return threats
