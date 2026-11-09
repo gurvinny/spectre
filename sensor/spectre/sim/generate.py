@@ -141,7 +141,9 @@ class SimSource:
         self.auto_scenarios = auto_scenarios
         self._sims = {"2.4GHz": Simulator("2.4GHz", seed=24),
                       "5GHz": Simulator("5GHz", seed=5)}
-        self._parsers = {b: Parser(f"sim-{b}", default_band=b) for b in self._sims}
+        self._parsers = {b: Parser(f"sim-{b}", default_band=b,
+                                  on_lifecycle=pipeline.record_board_event)
+                          for b in self._sims}
         self._task: Optional[asyncio.Task] = None
 
     def _feed(self, band: str, line: str) -> None:

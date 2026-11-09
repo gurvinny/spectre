@@ -70,7 +70,7 @@ class SerialReader:
         self.baud = baud
         self.pipeline = pipeline
         self.sensor_id = os.path.basename(path)  # e.g. "ttyUSB0"
-        self.parser = Parser(self.sensor_id)
+        self.parser = Parser(self.sensor_id, on_lifecycle=pipeline.record_board_event)
         self._fd: int | None = None
         self._buf = b""
 

@@ -45,10 +45,16 @@ ingest.
 ```json
 {"event":"boot","chip":"ESP32-C5","mode":"promiscuous","band":"2.4GHz","channels":"1-13"}
 {"event":"sniffer_started","ch":1,"usb_cdc":true}
+{"event":"channel_sweep_complete","total_pkts":84,"uptime_ms":16570}
 ```
 
 The **`band` from the `boot` event is latched** per board — this is how SPECTRE labels a board's
 frames regardless of which `/dev/ttyUSB*` it enumerated as.
+
+Every lifecycle line is also stored in the `board_events` table (`received_at`, `sensor_id`, latched
+`band`, `kind` = the `event` value, and the remaining keys as JSON `payload`), on the same rolling
+retention window and disk guard as raw frames. A `boot` row marks a board reboot, which is also where
+`seq` restarts; `total_pkts` on `channel_sweep_complete` is the firmware's own packet count.
 
 ## Volume
 

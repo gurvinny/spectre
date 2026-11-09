@@ -108,6 +108,18 @@ CREATE TABLE IF NOT EXISTS summaries (
 );
 CREATE INDEX IF NOT EXISTS idx_summaries_ts ON summaries(ts);
 
+-- Board lifecycle lines (boot, sniffer_started, channel_sweep_complete).
+-- Same retention as raw frames.
+CREATE TABLE IF NOT EXISTS board_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at REAL NOT NULL,
+    sensor_id   TEXT,
+    band        TEXT,
+    kind        TEXT,
+    payload     TEXT             -- JSON
+);
+CREATE INDEX IF NOT EXISTS idx_board_events_ts ON board_events(received_at);
+
 CREATE TABLE IF NOT EXISTS config (
     key       TEXT PRIMARY KEY,
     value     TEXT,            -- JSON-encoded
@@ -335,6 +347,26 @@ class Store:
                 "SELECT payload FROM summaries ORDER BY ts DESC LIMIT ?",
                 (limit,)).fetchall()
         return [json.loads(r["payload"]) for r in rows][::-1]
+
+    # ── Board lifecycle events ─────────────────────────────────────────
+    def insert_board_event(self, rec: dict) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO board_events(received_at,sensor_id,band,kind,payload)"
+                " VALUES(?,?,?,?,?)",
+                (rec.get("received_at", time.time()), rec.get("sensor_id"),
+                 rec.get("band"), rec.get("kind"), json.dumps(rec.get("payload") or {})))
+            self._db.commit()
+
+    def board_events(self, since: float = 0.0, limit: int = 10000) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT received_at,sensor_id,band,kind,payload FROM board_events"
+                " WHERE received_at>=? ORDER BY received_at LIMIT ?",
+                (since, limit)).fetchall()
+        return [{"received_at": r["received_at"], "sensor_id": r["sensor_id"],
+                 "band": r["band"], "kind": r["kind"],
+                 "payload": json.loads(r["payload"] or "{}")} for r in rows]
 
     # ── Known networks (evil-twin allowlist) ──────────────────────────
     def list_known_networks(self) -> list[dict]:
@@ -604,6 +636,7 @@ class Store:
     def _delete_frames_before(self, cutoff: float) -> int:
         with self._lock:
             cur = self._db.execute("DELETE FROM frames WHERE received_at < ?", (cutoff,))
+            self._db.execute("DELETE FROM board_events WHERE received_at < ?", (cutoff,))
             self._db.commit()
             return cur.rowcount
 

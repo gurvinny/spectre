@@ -87,6 +87,10 @@ class Pipeline:
         macs = self.cfg("muted_devices", []) or []
         self.engine.set_muted_devices([str(m) for m in macs])
 
+    # ── board lifecycle (boot, sweep counters) ─────────────────────────
+    def record_board_event(self, rec: dict) -> None:
+        self.store.insert_board_event(rec)
+
     # ── ingest (hot path, synchronous) ────────────────────────────────
     def ingest(self, ev: Event) -> None:
         self.total_frames += 1

@@ -12,6 +12,9 @@ Wire format observed live from the ESP32-C5 firmware::
   declares the board's band, which we latch so every subsequent frame from that
   board is labelled correctly regardless of USB enumeration order.
 * Boot-ROM banner lines (``ESP-ROM:...``) contain no JSON and are ignored.
+* An optional ``on_lifecycle`` callback receives one record per lifecycle line
+  (``received_at``, ``sensor_id``, latched ``band``, ``kind``, ``payload``), so
+  reboots and the firmware's own sweep counters can be stored.
 
 Author: gurvinny
 Project: SPECTRE
@@ -20,7 +23,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from .models import Event, now
 
@@ -49,11 +52,13 @@ class Parser:
     for observability.
     """
 
-    def __init__(self, sensor_id: str, default_band: str = "unknown") -> None:
+    def __init__(self, sensor_id: str, default_band: str = "unknown",
+                 on_lifecycle: Optional[Callable[[dict], None]] = None) -> None:
         self.sensor_id = sensor_id
         self.band = default_band
         self.malformed = 0
         self.last_event_kind: Optional[str] = None
+        self.on_lifecycle = on_lifecycle
 
     def parse_line(self, raw: str) -> Optional[Event]:
         """Parse one line. Returns an :class:`Event` for frame lines.
@@ -82,6 +87,12 @@ class Parser:
                 band = obj.get("band")
                 if isinstance(band, str) and band:
                     self.band = band
+            if self.on_lifecycle is not None:
+                self.on_lifecycle({
+                    "received_at": now(), "sensor_id": self.sensor_id,
+                    "band": self.band, "kind": kind,
+                    "payload": {k: v for k, v in obj.items() if k != "event"},
+                })
             return None
 
         # ── Frame events ───────────────────────────────────────────────

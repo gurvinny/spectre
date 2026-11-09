@@ -32,7 +32,7 @@ FastAPI  ──  REST + /ws  ──▶  Next.js SOC console
 - **Detection Engine** (`detect/`) — runs each rule against every event; rules are small, stateful,
   and read thresholds live from config. Threats are rate-limited by a per-signature cooldown.
 - **Store** (`store.py`) — SQLite WAL. Batched frame inserts, upserted inventory, threat/summary
-  logs, control-plane tables (config/users/sessions), retention + disk guard.
+  logs, board lifecycle events, control-plane tables (config/users/sessions), retention + disk guard.
 - **WazuhForwarder** (`wazuh.py`) — builds RFC 5424 and sends over UDP/TCP; reads host/port/proto
   live so Settings changes take effect immediately.
 - **API** (`api.py`) — REST + `/ws`. Cookie-session auth; the WebSocket streams batched frames and
