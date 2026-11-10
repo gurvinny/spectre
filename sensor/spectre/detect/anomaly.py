@@ -5,6 +5,9 @@
   limited and can be muted from Settings).
 * **RSSI jump** — a device whose signal strength changes sharply in a short
   time can indicate spoofing or a device physically approaching (proximity).
+  Readings are only compared on the same band and channel: a hopping radio
+  also hears a strong AP, far weaker, on neighbouring channels (adjacent-
+  channel leakage), and that difference is not a change in the device.
 * **Randomized-MAC probing** — modern devices probe with locally-administered
   (randomized) MACs; a high volume of these can indicate a recon tool.
 
@@ -36,7 +39,8 @@ class AnomalyRule(Rule):
     def __init__(self, cfg) -> None:
         super().__init__(cfg)
         self._seen: set[str] = set()             # client MACs ever seen
-        self._last_rssi: dict[str, int] = {}     # mac -> last rssi
+        # (mac, band, channel) -> (rssi, ts) of the last reading there
+        self._last_rssi: dict[tuple, tuple[int, float]] = {}
         self._last_jump_alert: dict[str, float] = {}  # mac -> last rssi-jump alert ts
         self._muted: set[str] = set()            # operator-trusted MACs (no alerts)
         self._start_ts: float | None = None      # first-event time, for warm-up
@@ -83,8 +87,12 @@ class AnomalyRule(Rule):
 
         # ── RSSI jump ──────────────────────────────────────────────────
         if ev.rssi is not None:
-            prev = self._last_rssi.get(mac)
-            self._last_rssi[mac] = ev.rssi
+            key = (mac, ev.band, ev.ch)
+            last = self._last_rssi.get(key)
+            self._last_rssi[key] = (ev.rssi, ev.received_at)
+            max_age = float(self.cfg("rssi_jump_max_age_seconds", 10))
+            prev = (last[0] if last is not None
+                    and ev.received_at - last[1] <= max_age else None)
             jump = int(self.cfg("rssi_jump_db", 55))
             cooldown = float(self.cfg("rssi_jump_cooldown_seconds", 60))
             last_alert = self._last_jump_alert.get(mac, 0.0)

@@ -6,9 +6,9 @@ from _support import frame, make_cfg, sim_events
 from spectre.detect.flood import FloodRule
 
 
-def beacon(ts, i):
+def beacon(ts, i, band="2.4GHz"):
     mac = f"AA:BB:CC:00:00:{i:02X}"
-    return frame(ts, type="BEACON", ch=6, rssi=-60, src=mac,
+    return frame(ts, type="BEACON", ch=6, rssi=-60, src=mac, band=band,
                  dst="FF:FF:FF:FF:FF:FF", bssid=mac, ssid=f"Net{i}")
 
 
@@ -52,6 +52,28 @@ class TestFloodRule(unittest.TestCase):
         again = self.feed(beacon(110 + i * 0.01, 100 + i) for i in range(40))
         later = self.feed(beacon(140 + i * 0.01, 200 + i) for i in range(40))
         self.assertEqual((len(first), len(again), len(later)), (1, 0, 1))
+
+    # Each board hears its own neighbourhood; two bands must not add up.
+    def test_two_bands_under_threshold_each_do_not_add_up(self):
+        evs = [beacon(100 + i * 0.01, i) for i in range(30)]
+        evs += [beacon(100.5 + i * 0.01, 100 + i, band="5GHz") for i in range(30)]
+        self.assertEqual(self.feed(evs), [])
+
+    def test_flood_on_one_band_is_counted_on_that_band(self):
+        self.feed(beacon(100 + i * 0.01, i) for i in range(20))
+        out = self.feed(beacon(100.5 + i * 0.01, 100 + i, band="5GHz") for i in range(40))
+        self.assertEqual([(t.band, t.detail["distinct_bssids"], round(t.ts, 2)) for t in out],
+                         [("5GHz", 40, 100.89)])
+
+    def test_same_bssid_on_two_bands_counts_once_per_band(self):
+        evs = [beacon(100 + i * 0.01, i % 39) for i in range(39)]
+        evs += [beacon(100.5 + i * 0.01, i % 39, band="5GHz") for i in range(39)]
+        self.assertEqual(self.feed(evs), [])
+
+    def test_beacon_cooldown_is_per_band(self):
+        a = self.feed(beacon(100 + i * 0.01, i) for i in range(40))
+        b = self.feed(beacon(101 + i * 0.01, 100 + i, band="5GHz") for i in range(40))
+        self.assertEqual((len(a), len(b)), (1, 1))
 
     # ── probe flood ────────────────────────────────────────────────────
     def test_119_probes_is_normal(self):

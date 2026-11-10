@@ -14,8 +14,8 @@ AP = "00:00:5E:00:53:01"
 T0 = 1_700_000_000.0
 
 
-def seen(ts, mac=DEV, rssi=-60, bssid=AP):
-    return frame(T0 + ts, type="PROBE_REQ", ch=6, rssi=rssi, src=mac,
+def seen(ts, mac=DEV, rssi=-60, bssid=AP, ch=6, band="2.4GHz"):
+    return frame(T0 + ts, type="PROBE_REQ", ch=ch, rssi=rssi, src=mac, band=band,
                  dst="FF:FF:FF:FF:FF:FF", bssid=bssid)
 
 
@@ -38,7 +38,8 @@ class TestAnomalyRule(unittest.TestCase):
     def setUp(self):
         self.cfg = make_cfg(new_device_alerts=True, alert_randomized_devices=False,
                             new_device_warmup_seconds=60, rssi_jump_db=55,
-                            rssi_jump_cooldown_seconds=60)
+                            rssi_jump_cooldown_seconds=60,
+                            rssi_jump_max_age_seconds=10)
         self.rule = AnomalyRule(self.cfg)
         # Anchor the warm-up clock at t=0 with an unrelated station.
         self.rule.process(seen(0, mac="00:00:5E:00:53:FE"))
@@ -106,8 +107,42 @@ class TestAnomalyRule(unittest.TestCase):
         a = self.feed(seen(31, rssi=-30))
         b = self.feed(seen(32, rssi=-90))            # inside DEV's cooldown
         c = self.feed(seen(32, mac=DEV2, rssi=-30))  # DEV2 has its own
+        self.feed(seen(94, rssi=-90))                # fresh same-channel baseline
         d = self.feed(seen(95, rssi=-30))            # DEV cooldown expired
         self.assertEqual([len(a), len(b), len(c), len(d)], [1, 0, 1, 1])
+
+    # Channel hopping: a strong AP leaks onto neighbouring channels at a much
+    # lower RSSI, so readings are only comparable on the same band + channel.
+    def test_reading_on_another_channel_is_not_a_jump(self):
+        self.feed(seen(30, rssi=-19, ch=9))
+        self.assertEqual(self.feed(seen(31, rssi=-77, ch=4)), [])
+
+    def test_reading_on_another_band_is_not_a_jump(self):
+        self.feed(seen(30, rssi=-19, ch=6))
+        self.assertEqual(self.feed(seen(31, rssi=-77, ch=6, band="5GHz")), [])
+
+    def test_jump_is_measured_against_the_same_channel_reading(self):
+        self.feed(seen(30, rssi=-20, ch=9), seen(30.5, rssi=-77, ch=4))
+        [t] = self.feed(seen(31, rssi=-80, ch=9))
+        self.assertEqual(t.detail, {"previous_rssi": -20, "current_rssi": -80,
+                                    "delta": -60})
+
+    def test_reading_older_than_max_age_is_not_compared(self):
+        self.feed(seen(30, rssi=-20))
+        self.assertEqual(self.feed(seen(40.5, rssi=-80)), [])
+
+    def test_reading_at_max_age_is_still_compared(self):
+        self.feed(seen(30, rssi=-20))
+        self.assertEqual(len(self.feed(seen(40, rssi=-80))), 1)
+
+    def test_stale_reading_is_replaced_by_the_new_one(self):
+        self.feed(seen(30, rssi=-20), seen(45, rssi=-80))
+        self.assertEqual(len(self.feed(seen(46, rssi=-20))), 1)
+
+    def test_max_age_change_is_picked_up_live(self):
+        self.cfg.values["rssi_jump_max_age_seconds"] = 30
+        self.feed(seen(30, rssi=-20))
+        self.assertEqual(len(self.feed(seen(55, rssi=-80))), 1)
 
     def test_first_reading_is_never_a_jump(self):
         self.cfg.values["new_device_alerts"] = False

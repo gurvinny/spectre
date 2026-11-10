@@ -37,7 +37,7 @@ on the allowlist** fires `critical`; the same SSID on an unexpected band fires `
   entry — convenient, but only enable once the air is known-clean.
 
 ### Beacon / probe flood — `flood.py`
-- **Beacon flood**: too many *distinct* BSSIDs beaconing within the window (`beacon_flood_distinct_bssids`, default 40) → `medium`. Catches mdk4/airbase-style fake-AP spam.
+- **Beacon flood**: too many *distinct* BSSIDs beaconing within the window (`beacon_flood_distinct_bssids`, default 40) → `medium`. Catches mdk4/airbase-style fake-AP spam. Counted **per band**, each band with its own window and cooldown, so a 2.4 GHz and a 5 GHz board's ordinary neighbourhoods do not add up to a flood.
 - **Probe flood**: `PROBE_REQ` rate above `probe_flood_threshold` (default 120) in the window → `medium`.
 - `flood_window_seconds` (default 5), `flood_cooldown_seconds` (default 30).
 
@@ -46,7 +46,10 @@ on the allowlist** fires `critical`; the same SSID on an unexpected band fires `
   **muted by default** (they're constant and expected); enable `alert_randomized_devices` to include
   them.
 - **RSSI jump**: a station's RSSI changing by ≥ `rssi_jump_db` (default 55) between observations →
-  `low`. Possible spoofing / proximity change.
+  `low`. Possible spoofing / proximity change. Observations are only compared on the **same band and
+  channel**: a hopping radio also hears a strong AP, much weaker, on neighbouring channels (adjacent-channel
+  leakage), and that difference is not a change in the device. A previous reading older than
+  `rssi_jump_max_age_seconds` (default 10, about two channel sweeps) is not compared against.
 
 ## Tuning notes
 

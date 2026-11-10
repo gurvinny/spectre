@@ -33,6 +33,7 @@ DEFAULTS: dict[str, Any] = {
     "new_device_warmup_seconds": 60,     # learn existing devices silently at startup
     "rssi_jump_db": 55,                  # only flag large, unlikely-multipath jumps
     "rssi_jump_cooldown_seconds": 60,    # per-MAC, so one device can't spam
+    "rssi_jump_max_age_seconds": 10,     # same-channel reading this old is stale
     "muted_devices": [],                 # MACs whose anomaly alerts are silenced
     # retention
     "raw_retention_hours": 48,
