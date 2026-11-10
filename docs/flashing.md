@@ -35,7 +35,7 @@ flashed to both boards and `flash.py` assigns the band afterwards.
     'fontFamily': 'monospace'
   }
 }}%%
-flowchart LR
+flowchart TB
     G["1 · Get an image<br/>CI artifact or idf.py build"] --> X["2 · Stop readers<br/>docker compose stop sensor"]
     X --> K{"First flash<br/>over original fw?"}
     K -- "yes" --> BK["3 · Back up flash<br/>read twice, compare"]

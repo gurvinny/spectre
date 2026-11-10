@@ -61,7 +61,7 @@ sequenceDiagram
     participant P as Parser
     participant DB as SQLite
     B->>P: boot {band, fw, ver, elf_sha, baud, plan}
-    Note over P: latch band for this port
+    Note over P: latch band
     P->>DB: board_events (boot)
     B->>P: sniffer_started
     loop every frame

@@ -212,9 +212,9 @@ sequenceDiagram
     participant R as SerialReader
     participant B as Board
     U->>A: POST /api/boards/{id}/cmd
-    alt SPECTRE_BOARD_CONTROL is not true
+    alt board control off
         A-->>U: 403, nothing written
-    else enabled
+    else board control on
         A->>A: validate, add id
         A->>S: audit row (kind=cmd)
         A->>R: send(command)
