@@ -93,12 +93,16 @@ jobs:
         working-directory: web
         env:
           NEXT_PUBLIC_API_BASE: ${{ env.API_BASE }}
+          # The 3D battlespace is off in normal builds; QA builds it so its
+          # software-WebGL regression test keeps running.
+          NEXT_PUBLIC_EXPERIMENTAL: "true"
         run: npm run build
 
       - name: Run browser QA
         working-directory: web
         env:
           NEXT_PUBLIC_API_BASE: ${{ env.API_BASE }}
+          NEXT_PUBLIC_EXPERIMENTAL: "true"
         run: npm run test:e2e
 
       - name: Sensor log

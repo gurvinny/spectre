@@ -117,7 +117,7 @@ flowchart LR
 </td>
 <td width="50%" valign="top">
 <img src="docs/screenshots/07-battlespace.png" alt="3D WebGL view of the RF environment"/>
-<br/><sub><b>Battlespace</b> — the RF environment in 3D. A deterministic layout from frame metadata, <b>not</b> triangulation.</sub>
+<br/><sub><b>Battlespace</b> (experimental, off by default: build with <code>NEXT_PUBLIC_EXPERIMENTAL=true</code>) — the RF environment in 3D. A deterministic layout from frame metadata, <b>not</b> triangulation.</sub>
 </td>
 </tr>
 <tr>

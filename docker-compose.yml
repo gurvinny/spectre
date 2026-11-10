@@ -50,6 +50,8 @@ services:
       context: ./web
       args:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8100}
+        # true adds the experimental 3D battlespace (a build-time flag)
+        NEXT_PUBLIC_EXPERIMENTAL: ${NEXT_PUBLIC_EXPERIMENTAL:-false}
     container_name: spectre-web
     restart: unless-stopped
     env_file: .env

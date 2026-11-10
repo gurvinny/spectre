@@ -8,6 +8,7 @@
 
 import dynamic from "next/dynamic";
 import { SectionHeader, Panel, Empty, Pill } from "@/components/ui";
+import { EXPERIMENTAL } from "@/lib/flags";
 
 const BattlespaceView = dynamic(
   () => import("@/components/viz3d/BattlespaceView").then((m) => m.BattlespaceView),
@@ -24,6 +25,16 @@ const BattlespaceView = dynamic(
 );
 
 export default function BattlespacePage() {
+  if (!EXPERIMENTAL) {
+    return (
+      <Panel>
+        <div data-testid="experimental-off" className="h-[40vh] grid place-items-center">
+          <Empty>The 3D battlespace is experimental and off in this build
+            (set NEXT_PUBLIC_EXPERIMENTAL=true when building to enable it).</Empty>
+        </div>
+      </Panel>
+    );
+  }
   return (
     <div className="flex flex-col gap-4 max-w-[1600px] mx-auto">
       <SectionHeader

@@ -16,17 +16,19 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { CommandPalette, OPEN_SEARCH_EVENT } from "@/components/CommandPalette";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { EXPERIMENTAL, visibleNav } from "@/lib/flags";
 
-const NAV = [
+const NAV_ALL = [
   { href: "/", label: "Command Center", icon: Radar },
   { href: "/spectrum", label: "Spectrum", icon: AudioLines },
-  { href: "/battlespace", label: "Battlespace", icon: Orbit },
+  { href: "/battlespace", label: "Battlespace", icon: Orbit, experimental: true },
   { href: "/live", label: "Live Feed", icon: Activity },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/threats", label: "Threats", icon: ShieldAlert },
   { href: "/boards", label: "Boards", icon: Cpu },
   { href: "/settings", label: "Settings", icon: Settings2 },
 ];
+const NAV = visibleNav(NAV_ALL, EXPERIMENTAL);
 
 function StatusRail() {
   const { conn, fps, threats, overview } = useLive();
