@@ -16,20 +16,20 @@ SPECTRE forwards **threats and periodic summaries** (never raw frames) to Wazuh 
     'actorBorder': '#35E0C4',
     'actorTextColor': '#fff',
     'signalColor': '#35E0C4',
-    'signalTextColor': '#C9D6DF',
+    'signalTextColor': '#6B7C8C',
     'noteBkgColor': '#0a0e12',
     'noteBorderColor': '#9B8CFF',
     'noteTextColor': '#C9D6DF',
     'labelBoxBkgColor': '#0a0e12',
     'labelBoxBorderColor': '#9B8CFF',
     'labelTextColor': '#fff',
-    'loopTextColor': '#C9D6DF',
+    'loopTextColor': '#6B7C8C',
     'activationBkgColor': '#11171d',
     'activationBorderColor': '#35E0C4',
     'fontFamily': 'monospace'
   }
 }}%%
-flowchart LR
+flowchart TB
     F["raw frames<br/>(stay on the sensor)"] -.-x Z
     T["Threat<br/>detect/"] --> W["WazuhForwarder<br/>RFC 5424 · local7"]
     S["Summary ticker<br/>every 60 s"] --> W

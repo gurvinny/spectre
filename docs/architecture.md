@@ -17,20 +17,20 @@ the sensor service, and its two consumers.
     'actorBorder': '#35E0C4',
     'actorTextColor': '#fff',
     'signalColor': '#35E0C4',
-    'signalTextColor': '#C9D6DF',
+    'signalTextColor': '#6B7C8C',
     'noteBkgColor': '#0a0e12',
     'noteBorderColor': '#9B8CFF',
     'noteTextColor': '#C9D6DF',
     'labelBoxBkgColor': '#0a0e12',
     'labelBoxBorderColor': '#9B8CFF',
     'labelTextColor': '#fff',
-    'loopTextColor': '#C9D6DF',
+    'loopTextColor': '#6B7C8C',
     'activationBkgColor': '#11171d',
     'activationBorderColor': '#35E0C4',
     'fontFamily': 'monospace'
   }
 }}%%
-flowchart LR
+flowchart TB
     subgraph FW["Firmware · each ESP32-C5"]
         RX["promiscuous rx_cb<br/>copy header + IEs"]
         RG[("ring buffer<br/>32 KB")]
@@ -139,14 +139,14 @@ Details: [firmware/README.md](../firmware/README.md).
     'actorBorder': '#35E0C4',
     'actorTextColor': '#fff',
     'signalColor': '#35E0C4',
-    'signalTextColor': '#C9D6DF',
+    'signalTextColor': '#6B7C8C',
     'noteBkgColor': '#0a0e12',
     'noteBorderColor': '#9B8CFF',
     'noteTextColor': '#C9D6DF',
     'labelBoxBkgColor': '#0a0e12',
     'labelBoxBorderColor': '#9B8CFF',
     'labelTextColor': '#fff',
-    'loopTextColor': '#C9D6DF',
+    'loopTextColor': '#6B7C8C',
     'activationBkgColor': '#11171d',
     'activationBorderColor': '#35E0C4',
     'fontFamily': 'monospace'
@@ -191,14 +191,14 @@ flowchart LR
     'actorBorder': '#35E0C4',
     'actorTextColor': '#fff',
     'signalColor': '#35E0C4',
-    'signalTextColor': '#C9D6DF',
+    'signalTextColor': '#6B7C8C',
     'noteBkgColor': '#0a0e12',
     'noteBorderColor': '#9B8CFF',
     'noteTextColor': '#C9D6DF',
     'labelBoxBkgColor': '#0a0e12',
     'labelBoxBorderColor': '#9B8CFF',
     'labelTextColor': '#fff',
-    'loopTextColor': '#C9D6DF',
+    'loopTextColor': '#6B7C8C',
     'activationBkgColor': '#11171d',
     'activationBorderColor': '#35E0C4',
     'fontFamily': 'monospace'
