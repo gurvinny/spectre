@@ -43,8 +43,9 @@ python3 firmware/flash.py --port /dev/ttyUSB1 --band 5GHz
 build` CI artifact, whose `SHA256SUMS` it checks first) with esptool via `uvx` at 460800 baud. It then sets
 the band by command, restores that band's default plan (`--keep-config` keeps the current one), reboots the
 board by command and checks the new `boot` line against the image: firmware name, version, ELF sha256,
-band, baud and the acknowledged plan. It waits for `sniffer_started` and prints a JSON report with the
-sha256 of every image file. Any mismatch or silence exits non-zero. `--verify-only` skips the flash and
+band, baud and the acknowledged plan. After `sniffer_started` it soaks for 10 s (`--soak N`): every line
+must parse and frame `seq` must not skip. It prints a JSON report with the sha256 of every image file on
+stdout (esptool's output goes to stderr). Any mismatch or silence exits non-zero. `--verify-only` skips the flash and
 checks a board that is already running the image. Needs Python 3.10+ and
 [uv](https://docs.astral.sh/uv/); nothing else.
 

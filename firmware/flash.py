@@ -12,8 +12,11 @@ plan. So after flashing, this tool talks to the firmware itself:
    ``--keep-config``), and reboots the board by command,
 4. waits for the fresh ``boot`` line and checks firmware name, version, ELF
    sha, band, baud and plan against what was flashed and acknowledged,
-5. waits for ``sniffer_started`` and prints a JSON report with the image
-   sha256s.
+5. waits for ``sniffer_started``, then soaks for a few seconds: every line
+   must parse and frame ``seq`` must not skip (a console log spliced into a
+   data line shows up exactly like that),
+6. prints a JSON report with the image sha256s on stdout (esptool's own
+   output goes to stderr).
 
 Any mismatch exits non-zero. Stop the sensor first: two readers on one port
 each see half the lines.
@@ -57,6 +60,7 @@ MIN_SHA_CHARS = 8
 SETTLE_S = 1.5
 ACK_TIMEOUT_S = 5.0
 BOOT_TIMEOUT_S = 15.0
+SOAK_S = 10.0
 
 _IMAGE_MAGIC = 0xE9
 _DESC_MAGIC = 0xABCD5432
@@ -299,9 +303,39 @@ def command(link, cmd: dict, cid: str, timeout: float = ACK_TIMEOUT_S) -> dict:
     return ack
 
 
+def soak(link, seconds: float) -> dict:
+    """Read for *seconds*: count lines that do not parse and frame seq skips."""
+    lines = frames = bad = gaps = 0
+    last = None
+    deadline = link.clock() + seconds
+    while True:
+        left = deadline - link.clock()
+        if left <= 0:
+            break
+        text = link.readline(left)
+        if text is None:
+            break
+        if not text.strip():
+            continue
+        lines += 1
+        obj = parse_line(text)
+        if obj is None:
+            bad += 1
+            continue
+        seq = obj.get("seq")
+        if isinstance(seq, int) and "type" in obj:
+            frames += 1
+            if last is not None and seq != last + 1:
+                gaps += 1
+            last = seq
+    return {"seconds": seconds, "lines": lines, "frames": frames,
+            "bad_lines": bad, "seq_gaps": gaps}
+
+
 def configure_and_verify(link, desc: AppDesc, band: str, keep_config: bool = False,
                          settle: float = SETTLE_S,
-                         boot_timeout: float = BOOT_TIMEOUT_S) -> dict:
+                         boot_timeout: float = BOOT_TIMEOUT_S,
+                         soak_s: float = SOAK_S) -> dict:
     """Set the band (and default plan), reboot, and check the new boot line."""
     if band not in BANDS:
         raise FlashError(f"band must be one of {', '.join(BANDS)}")
@@ -324,7 +358,13 @@ def configure_and_verify(link, desc: AppDesc, band: str, keep_config: bool = Fal
         raise FlashError("; ".join(problems))
     if wait_for(link, lambda o: o.get("event") == "sniffer_started", boot_timeout) is None:
         raise FlashError("booted, but the sniffer never started")
-    return {"band": band, "plan": plan, "reset": boot.get("reset")}
+    result = {"band": band, "plan": plan, "reset": boot.get("reset")}
+    if soak_s > 0:
+        result["soak"] = s = soak(link, soak_s)
+        if s["bad_lines"] or s["seq_gaps"]:
+            raise FlashError(f"soak: {s['bad_lines']} unparseable lines, "
+                             f"{s['seq_gaps']} seq gaps in {soak_s:.0f} s")
+    return result
 
 
 def report(port: str, image: Image, result: dict, flashed: bool) -> dict:
@@ -343,15 +383,18 @@ def main(argv: list[str] | None = None) -> int:
                     help="do not flash; configure and check the running image")
     ap.add_argument("--keep-config", action="store_true",
                     help="keep the board's channel plan instead of the band defaults")
+    ap.add_argument("--soak", type=float, default=SOAK_S,
+                    help="seconds of clean output required after start (0 = skip)")
     args = ap.parse_args(argv)
     try:
         image = load_image(args.build)
         if not args.verify_only:
-            subprocess.run(esptool_argv(args.port, image), check=True)
+            subprocess.run(esptool_argv(args.port, image), check=True, stdout=sys.stderr)
         fd = open_port(args.port)
         try:
             result = configure_and_verify(SerialLink(fd), image.desc, args.band,
-                                          keep_config=args.keep_config)
+                                          keep_config=args.keep_config,
+                                          soak_s=args.soak)
         finally:
             os.close(fd)
     except (FlashError, OSError, subprocess.CalledProcessError) as e:

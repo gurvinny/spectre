@@ -67,13 +67,15 @@ class FakeBoard:
 
     def __init__(self, band="2.4GHz", plan=None, ver="2.0.0", sha=ELF_HEX[:9],
                  silent=False, reject=None, ack_band=None, no_boot=False,
-                 no_started=False, boot_overrides=None, plan_missing=False):
+                 no_started=False, boot_overrides=None, plan_missing=False,
+                 after_start=None):
         self.plan = dict(plan or {**DEFAULTS[band], "channels": "1,6,11"})
         self.ver, self.sha = ver, sha
         self.silent, self.reject, self.ack_band = silent, reject, ack_band
         self.no_boot, self.no_started = no_boot, no_started
         self.boot_overrides = boot_overrides or {}
         self.plan_missing = plan_missing
+        self.after_start = after_start or []
         self.queue: list[str] = []
         self.sent: list[dict] = []
         self.now = 0.0
@@ -124,6 +126,7 @@ class FakeBoard:
                 self.emit(line)
             if not self.no_started:
                 self.emit({"event": "sniffer_started", "ch": 1})
+                self.queue.extend(self.after_start)
 
 
 def desc(**kw):
@@ -338,7 +341,7 @@ class SessionTests(unittest.TestCase):
 
     def test_settle_window_passes_before_the_first_command(self):
         board = FakeBoard()
-        self.run_board(board, settle=1.5)
+        self.run_board(board, settle=1.5, soak_s=0)   # the soak would add clock time
         self.assertGreaterEqual(board.now, 1.5)
 
     def test_unknown_band_is_refused_before_talking(self):
@@ -373,6 +376,47 @@ class SessionTests(unittest.TestCase):
         with self.assertRaises(flash.FlashError):
             self.run_board(board, settle=0.5)
         self.assertAlmostEqual(board.now, 0.5 + flash.ACK_TIMEOUT_S)
+
+
+def frame_line(seq):
+    return PREFIX + json.dumps({"seq": seq, "uptime_ms": 9, "ch": 1, "rssi": -40,
+                                "type": "BEACON"}, separators=(",", ":"))
+
+
+SPLICED = (PREFIX + '{"seq":4,"uptime_ms":9,"ch":1,"rssi":-40,"type":"BEAE (2139) wifi:failed '
+           "to post WiFi event=43 ret=259\r")
+
+
+class SoakTests(unittest.TestCase):
+    def run_board(self, lines, **kw):
+        return flash.configure_and_verify(FakeBoard(after_start=lines), desc(), "2.4GHz", **kw)
+
+    def test_clean_stream_is_counted(self):
+        lines = [frame_line(n) for n in range(1, 6)]
+        lines[2:2] = ["", PREFIX + '{"event":"telemetry","rx_total":2}']   # blanks and events are fine
+        soak = self.run_board(lines)["soak"]
+        self.assertEqual((soak["lines"], soak["frames"], soak["bad_lines"], soak["seq_gaps"]),
+                         (6, 5, 0, 0))
+
+    def test_a_spliced_log_line_fails(self):
+        lines = [frame_line(3), SPLICED, 'BEACON"}', frame_line(5)]
+        with self.assertRaisesRegex(flash.FlashError, "2 unparseable lines, 1 seq gaps"):
+            self.run_board(lines)
+
+    def test_a_seq_skip_fails(self):
+        with self.assertRaisesRegex(flash.FlashError, "0 unparseable lines, 1 seq gaps"):
+            self.run_board([frame_line(1), frame_line(2), frame_line(4)])
+
+    def test_soak_zero_skips_the_check(self):
+        result = self.run_board([SPLICED], soak_s=0)
+        self.assertNotIn("soak", result)
+
+    def test_soak_stops_at_its_deadline(self):
+        board = FakeBoard(after_start=[frame_line(1)])
+        start = board.now
+        flash.configure_and_verify(board, desc(), "2.4GHz", settle=0, soak_s=4)
+        self.assertLessEqual(board.now - start, 4 + flash.BOOT_TIMEOUT_S)
+        self.assertGreaterEqual(board.now - start, 4)
 
 
 class PortTests(unittest.TestCase):
@@ -449,6 +493,7 @@ class MainTests(unittest.TestCase):
         args = ["--port", "/dev/ttyUSB0", "--band", "2.4GHz", "--build", str(self.build), *extra]
         with mock.patch("sys.stdout") as out, mock.patch("sys.stderr") as err:
             code = flash.main(args)
+        self.err = err
         printed = "".join(c.args[0] for c in out.write.call_args_list)
         errors = "".join(c.args[0] for c in err.write.call_args_list)
         return code, printed, errors
@@ -459,6 +504,8 @@ class MainTests(unittest.TestCase):
         argv = self.esptool.call_args.args[0]
         self.assertIn("write-flash", argv)
         self.assertTrue(self.esptool.call_args.kwargs.get("check"))
+        # esptool's progress must not land in the JSON report on stdout
+        self.assertIs(self.esptool.call_args.kwargs.get("stdout"), self.err)
         self.open_port.assert_called_once_with("/dev/ttyUSB0")
         self.close.assert_called_once_with(99)
         rep = json.loads(printed)
@@ -486,6 +533,15 @@ class MainTests(unittest.TestCase):
         self.assertEqual((code, printed), (1, ""))
         self.assertIn("version is '1.9.0'", errors)
         self.close.assert_called_once_with(99)
+
+    def test_soak_is_passed_through(self):
+        self.board.after_start = [frame_line(1), frame_line(3)]
+        code, _, errors = self.main()
+        self.assertEqual(code, 1)
+        self.assertIn("seq gaps", errors)
+        code, printed, _ = self.main("--soak", "0")
+        self.assertEqual(code, 0)
+        self.assertNotIn("soak", json.loads(printed))
 
     def test_keep_config_is_passed_through(self):
         code, printed, _ = self.main("--keep-config")

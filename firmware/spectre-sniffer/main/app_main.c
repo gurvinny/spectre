@@ -21,6 +21,7 @@
 #include "driver/temperature_sensor.h"
 #include "driver/uart.h"
 #include "esp_app_desc.h"
+#include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -177,6 +178,9 @@ static void radio_apply(const cfg_t *c)
 
 static void radio_init(const cfg_t *c)
 {
+    /* The driver posts events (e.g. on every channel change) to the default
+     * loop; without one it logs an error per hop. */
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifi_init_config_t wc = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wc));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
@@ -424,10 +428,14 @@ void app_main(void)
     fw_info_t fw = {.ver = s_ver, .elf_sha = s_sha,
                     .reset = reset_name(esp_reset_reason()), .baud = UART_BAUD};
 
+    /* The console shares UART0 with the data lines and writes without the
+     * line lock, so any log line splices into the middle of a JSON line and
+     * that line is lost. Silence every tag before the radio starts. */
+    esp_log_level_set("*", ESP_LOG_NONE);
+
     static char line[LINE_BUF];
     uart_line(line, line_boot(line, sizeof line, &fw, &s_cfg));
     radio_init(&s_cfg);
-    esp_log_level_set("*", ESP_LOG_ERROR);   /* keep the UART for data lines */
     uart_line(line, line_started(line, sizeof line, s_cfg.pin ? s_cfg.pin : s_cfg.ch[0]));
 
     xTaskCreate(emit_task, "emit", 6144, NULL, 5, NULL);
