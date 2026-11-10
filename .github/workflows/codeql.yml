@@ -40,13 +40,15 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          language: ${{ matrix.language }}
+          languages: ${{ matrix.language }}
+          # All three are interpreted, so no build is needed. The C firmware is
+          # left out on purpose: autobuild cannot build an ESP-IDF project, and
+          # the Firmware build job (-Werror) plus the sanitized host tests in
+          # ci.yml cover it instead.
+          build-mode: none
           # Security-focused; the quality suite adds a lot of style noise on a
           # repo this size without surfacing more real issues.
           queries: security-extended
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
