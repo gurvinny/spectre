@@ -25,7 +25,7 @@ test.beforeEach(async ({ page, context }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 });
 
-const ROUTES = ["/", "/spectrum", "/inventory", "/threats", "/settings", "/battlespace"];
+const ROUTES = ["/", "/spectrum", "/inventory", "/threats", "/boards", "/settings", "/battlespace"];
 
 for (const route of ROUTES) {
   test(`route ${route} mounts without errors`, async ({ page }) => {

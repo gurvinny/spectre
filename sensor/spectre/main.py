@@ -41,7 +41,10 @@ def build() -> tuple:
     store = Store(_env("SPECTRE_DB", "/data/spectre.db"))
     config = Config(store)
     pipeline = Pipeline(store, config)
-    app = create_app(store, config, pipeline)
+    # Board id -> send(); filled at startup once the source is up. Replay
+    # has no boards to command, so it registers none.
+    senders: dict = {}
+    app = create_app(store, config, pipeline, senders=senders)
 
     source = _env("SPECTRE_SOURCE", "serial").lower()
     ports = _env("SERIAL_PORTS", "/dev/ttyUSB0,/dev/ttyUSB1").split(",")
@@ -58,6 +61,7 @@ def build() -> tuple:
             from .sim.generate import SimSource
             state["source_obj"] = SimSource(pipeline)
             state["source_obj"].start()
+            senders.update({sid: b.send for sid, b in state["source_obj"].boards.items()})
             log.info("ingest source: SIMULATOR")
         elif source == "replay":
             from .sim.replay import ReplaySource
@@ -72,6 +76,8 @@ def build() -> tuple:
                     r.start(loop)
                 except OSError as exc:
                     log.error("could not open %s: %s", r.path, exc)
+                    continue
+                senders[r.sensor_id] = r.send
             state["readers"] = readers
             log.info("ingest source: SERIAL %s", ports)
 

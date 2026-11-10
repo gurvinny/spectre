@@ -99,6 +99,7 @@ The v2 firmware adds these kinds, stored the same way:
 | `telemetry` | the counters, ring-buffer `q_hwm` / `q_size`, `heap`, `heap_min`, `temp_dc`, `uart_bps` |
 | `clock_sync` | `uptime_ms` and the 64-bit `mono_us`, for mapping `ts_us` onto host time |
 | `cmd_ack` | `cmd`, `id`, `ok`, `err`, and the resulting `config` |
+| `cmd` | Written by the sensor, not the board: one audit row per console command, with `id`, the `command` as sent, the `user`, and `sent` (bytes) or `error` |
 
 ### `ap_info`
 
@@ -117,6 +118,16 @@ as compact JSON, a line break inside it is refused, and a command over **254 byt
 buffer, less its terminator) is refused before it is written. Writes are serialized per port, and a
 port that does not drain within 2 s raises instead of blocking. Every reply arrives as a `cmd_ack`
 lifecycle line.
+
+From the console, `POST /api/boards/{id}/cmd` sends one, only when the sensor runs with
+`SPECTRE_BOARD_CONTROL=true` (otherwise `403`, and nothing is written). It accepts `get_config`,
+`set`, `reset_config` and `reboot`, adds an `id` when the body has none, writes the `cmd` audit row
+stamped before the send, and waits up to 3 s for the `cmd_ack` carrying that `id`. A command the
+sensor refuses before writing (too long, not one line) is `400`; a port that is closed or does not
+drain is `502`. Both are audited too. `GET /api/boards` reduces the newest row of each kind per
+board to firmware, radio plan (the boot plan, or a newer successful `cmd_ack`'s), and health:
+loss is `drop_queue + drop_overflow` over `rx_total` (`drop_short` and `drop_dedup` are not losses),
+UART load is `uart_bps × 10` over the boot `baud` (8N1).
 
 ## Schema migration
 

@@ -77,7 +77,7 @@ if (bundles.length !== tests.length) {
 
 // Raise this when tests are added. Never lower it to make a run pass: a suite
 // that silently shrinks still reports green.
-const MIN_TESTS = 33;
+const MIN_TESTS = 42;
 
 let out = "";
 let failed = false;

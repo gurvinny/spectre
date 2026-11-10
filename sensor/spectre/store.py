@@ -119,6 +119,8 @@ CREATE TABLE IF NOT EXISTS board_events (
     payload     TEXT             -- JSON
 );
 CREATE INDEX IF NOT EXISTS idx_board_events_ts ON board_events(received_at);
+-- The console reads the newest row of each kind per board.
+CREATE INDEX IF NOT EXISTS idx_board_events_sensor_kind ON board_events(sensor_id, kind);
 
 -- One row per ap_info line from the v2 firmware: an AP's advertised security
 -- and capabilities, on first sighting, on change and periodically. Typed
@@ -435,6 +437,28 @@ class Store:
         return [{"received_at": r["received_at"], "sensor_id": r["sensor_id"],
                  "band": r["band"], "kind": r["kind"],
                  "payload": json.loads(r["payload"] or "{}")} for r in rows]
+
+    def latest_board_events(self) -> list[dict]:
+        """The newest row of each kind for each board."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT b.received_at,b.sensor_id,b.band,b.kind,b.payload FROM board_events b"
+                " JOIN (SELECT MAX(id) AS id FROM board_events GROUP BY sensor_id, kind) m"
+                " ON b.id = m.id ORDER BY b.sensor_id, b.kind").fetchall()
+        return [{"received_at": r["received_at"], "sensor_id": r["sensor_id"],
+                 "band": r["band"], "kind": r["kind"],
+                 "payload": json.loads(r["payload"] or "{}")} for r in rows]
+
+    def find_cmd_ack(self, sensor_id: str, cmd_id: str, since: float) -> Optional[dict]:
+        """The newest ``cmd_ack`` from *sensor_id* echoing *cmd_id*, at or after *since*."""
+        with self._lock:
+            r = self._db.execute(
+                "SELECT received_at,payload FROM board_events WHERE sensor_id=?"
+                " AND kind='cmd_ack' AND received_at>=? AND json_extract(payload,'$.id')=?"
+                " ORDER BY id DESC LIMIT 1", (sensor_id, since, cmd_id)).fetchone()
+        if r is None:
+            return None
+        return dict(json.loads(r["payload"] or "{}"), received_at=r["received_at"])
 
     # ── AP security / capability lines (v2 firmware) ───────────────────
     def insert_ap_info(self, rec: dict) -> None:

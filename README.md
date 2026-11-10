@@ -301,6 +301,7 @@ Everything has a sensible default in `.env` (see `.env.example`) and can be chan
 | `WAZUH_HOST` / `WAZUH_PORT` | `10.0.0.20` / `514` | Target SIEM syslog destination. |
 | `RAW_RETENTION_HOURS` | `48` | Window for rolling raw-frame retention. |
 | `DISK_GUARD_PERCENT` | `85` | Early-prune threshold to prevent full disk. |
+| `SPECTRE_BOARD_CONTROL` | `false` | Allow board commands (retune, reset, reboot) from the **Boards** page. Read on every start, not seeded. Every command is audited in `board_events`. |
 | `SPECTRE_WEB_ORIGINS` | `http://HOST_IP:WEB_PORT` | Browser origin(s) allowed to call the API with the session cookie, comma separated. Read on every start, not seeded. Set it when the console is served from another address, for example behind the reverse-proxy overlay. |
 
 ---
@@ -386,6 +387,8 @@ All routes are under `/api` and require an authenticated session cookie, except 
 | `GET` `PUT` | `/api/settings` | Live configuration |
 | `GET` `POST` `DELETE` | `/api/known-networks` | Evil-twin allowlist |
 | `GET` `POST` `DELETE` | `/api/muted-devices` | Per-MAC anomaly muting |
+| `GET` | `/api/boards` | Per-board firmware, radio plan, loss, UART load and last command |
+| `POST` | `/api/boards/{id}/cmd` | Send a firmware command; `403` unless `SPECTRE_BOARD_CONTROL=true`, answered with the board's `cmd_ack` when it arrives within 3 s |
 | `WS` | `/ws` | Live frame / threat / summary push |
 
 ---

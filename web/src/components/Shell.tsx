@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Radar, AudioLines, Orbit, Activity, Boxes, ShieldAlert, Settings2, LogOut, Search,
+  Radar, AudioLines, Orbit, Activity, Boxes, ShieldAlert, Cpu, Settings2, LogOut, Search,
 } from "lucide-react";
 import { LiveProvider, useLive } from "@/components/LiveProvider";
 import { SpectreMark } from "@/components/SpectreMark";
@@ -24,6 +24,7 @@ const NAV = [
   { href: "/live", label: "Live Feed", icon: Activity },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/threats", label: "Threats", icon: ShieldAlert },
+  { href: "/boards", label: "Boards", icon: Cpu },
   { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 

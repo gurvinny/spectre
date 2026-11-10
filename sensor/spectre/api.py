@@ -13,12 +13,13 @@ import logging
 import os
 import time
 from collections import deque
+from collections.abc import Callable, Mapping
 
 from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
                      WebSocket, WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import __version__
+from . import __version__, boards
 from .auth import hash_password, new_session_token, verify_password
 from .config import Config
 from .pipeline import Pipeline
@@ -37,6 +38,11 @@ LOGIN_MAX_FAILURES = 5
 LOGIN_WINDOW_SECONDS = 15 * 60
 
 DEFAULT_WEB_ORIGINS = "http://localhost:4100,http://127.0.0.1:4100"
+
+# How long a board command waits for the board's cmd_ack before answering
+# without it. The ack still lands in board_events when it comes.
+ACK_WAIT_SECONDS = 3.0
+ACK_POLL_SECONDS = 0.05
 
 
 def web_origins() -> list[str]:
@@ -87,8 +93,16 @@ class FailureLimiter:
 
 
 def create_app(store: Store, config: Config, pipeline: Pipeline,
-               origins: list[str] | None = None) -> FastAPI:
+               origins: list[str] | None = None,
+               senders: Mapping[str, Callable[[dict], int]] | None = None,
+               board_control: bool | None = None,
+               ack_wait: float = ACK_WAIT_SECONDS) -> FastAPI:
+    """*senders* maps a board id to its ``send()``; the caller may fill it
+    after startup, once the ports are open. *board_control* defaults to
+    ``SPECTRE_BOARD_CONTROL``."""
     app = FastAPI(title="SPECTRE", version=__version__)
+    senders = senders if senders is not None else {}
+    control = boards.control_enabled() if board_control is None else board_control
     allowed = set(origins if origins is not None else web_origins())
     limiter = FailureLimiter()
     app.state.limiter = limiter
@@ -310,6 +324,54 @@ def create_app(store: Store, config: Config, pipeline: Pipeline,
         config.set("muted_devices", muted)
         pipeline.refresh_muted_devices()
         return {"ok": True, "muted_devices": muted}
+
+    # ── boards: health, and commands when control is enabled ──────────
+    @app.get("/api/boards")
+    def list_boards(user: str = Depends(current_user)) -> dict:
+        return {"control_enabled": control,
+                "boards": boards.list_boards(store.latest_board_events(), senders)}
+
+    @app.post("/api/boards/{sensor_id}/cmd")
+    def board_command(sensor_id: str, body: dict,
+                      user: str = Depends(current_user)) -> dict:
+        if not control:
+            raise HTTPException(status_code=403, detail="board control is disabled;"
+                                " set SPECTRE_BOARD_CONTROL=true to enable it")
+        send = senders.get(sensor_id)
+        if send is None:
+            raise HTTPException(status_code=404, detail="no such board")
+        try:
+            command = boards.validate_command(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        # Stamped before the send, so the audit row sorts ahead of its ack.
+        t0 = time.time()
+        audit = {"id": command["id"], "command": command, "user": user}
+        status, detail = 200, ""
+        try:
+            audit["sent"] = send(command)
+        except ValueError as exc:
+            status, detail = 400, str(exc)
+        except (OSError, RuntimeError) as exc:  # TimeoutError is an OSError
+            status, detail = 502, f"board did not take the command: {exc}"
+        if status != 200:
+            audit["error"] = detail
+        latest = {r["kind"]: r for r in store.latest_board_events()
+                  if r["sensor_id"] == sensor_id}
+        band = max(latest.values(), key=lambda r: r["received_at"])["band"] if latest else None
+        store.insert_board_event({"received_at": t0, "sensor_id": sensor_id, "band": band,
+                                  "kind": "cmd", "payload": audit})
+        if status != 200:
+            raise HTTPException(status_code=status, detail=detail)
+        log.warning("board %s: %s sent by %s", sensor_id, command["cmd"], user)
+
+        deadline = t0 + ack_wait
+        ack = store.find_cmd_ack(sensor_id, command["id"], t0)
+        while ack is None and time.time() < deadline:
+            time.sleep(ACK_POLL_SECONDS)
+            ack = store.find_cmd_ack(sensor_id, command["id"], t0)
+        return {"id": command["id"], "sent": audit["sent"], "ack": ack}
 
     # ── live feed ──────────────────────────────────────────────────────
     @app.websocket("/ws")

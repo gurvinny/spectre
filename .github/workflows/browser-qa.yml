@@ -51,6 +51,9 @@ jobs:
           API_PORT: "8100"
           WAZUH_ENABLED: "false"
           LOG_LEVEL: WARNING
+          # The simulator's boards take commands, so the control path is
+          # exercised end to end. Real deployments default to off.
+          SPECTRE_BOARD_CONTROL: "true"
           # Playwright serves the console on 127.0.0.1:4310.
           SPECTRE_WEB_ORIGINS: http://127.0.0.1:4310
         run: |

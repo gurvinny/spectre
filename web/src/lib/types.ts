@@ -108,3 +108,62 @@ export interface SearchResult {
 export type WsMessage =
   | { type: "snapshot"; overview: Overview }
   | { type: "batch"; frames: Frame[]; threats: Threat[]; fps: number };
+
+/** Newest health and config of one sniffer board, from GET /api/boards. */
+export interface BoardHealth {
+  rx_total: number | null;
+  emitted: number | null;
+  lost: number | null;
+  loss_pct: number | null;
+  drops: Record<string, number | null>;
+  uart_bps: number | null;
+  uart_load: number | null;
+  queue_fill: number | null;
+  heap: number | null;
+  heap_min: number | null;
+  temp_c: number | null;
+  uptime_ms: number | null;
+}
+
+export interface BoardAck {
+  cmd?: string;
+  id?: string;
+  ok?: boolean;
+  err?: string;
+  config?: Record<string, unknown>;
+  received_at: number;
+}
+
+export interface Board {
+  sensor_id: string;
+  band: string | null;
+  last_seen: number | null;
+  controllable: boolean;
+  firmware: {
+    chip: string | null;
+    fw: string | null;
+    ver: string | null;
+    elf_sha: string | null;
+    reset: string | null;
+    baud: number | null;
+    caps: string[] | null;
+    booted_at: number;
+  } | null;
+  plan: {
+    channels: string | null;
+    dwell_ms: number | null;
+    pin: number | null;
+    filter: string[] | null;
+    dedup: number | null;
+    ap_info_s: number | null;
+  };
+  health: BoardHealth;
+  last_cmd: { id: string; command: Record<string, unknown>; user: string; sent?: number;
+              error?: string; received_at: number } | null;
+  last_ack: BoardAck | null;
+}
+
+export interface BoardsResponse {
+  control_enabled: boolean;
+  boards: Board[];
+}

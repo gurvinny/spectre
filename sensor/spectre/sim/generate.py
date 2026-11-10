@@ -31,6 +31,7 @@ import asyncio
 import json
 import random
 import sys
+import threading
 import time
 import zlib
 from typing import Callable, Optional
@@ -581,10 +582,14 @@ class Simulator:
 class SimBoard:
     """One simulated board as the pipeline sees it: a parser plus ``send()``."""
 
-    def __init__(self, sensor_id: str, sim: Simulator, pipeline: Pipeline) -> None:
+    def __init__(self, sensor_id: str, sim: Simulator, pipeline: Pipeline,
+                 lock: Optional[threading.Lock] = None) -> None:
         self.sensor_id = sensor_id
         self.sim = sim
         self.pipeline = pipeline
+        # Shared with the source's step(): the API sends from a worker thread
+        # while the event loop is generating traffic on the same Simulator.
+        self.lock = lock if lock is not None else threading.Lock()
         self.parser = Parser(sensor_id, default_band=sim.band,
                              on_lifecycle=pipeline.record_board_event,
                              on_ap_info=pipeline.record_ap_info)
@@ -604,7 +609,8 @@ class SimBoard:
         data = text.encode("utf-8")
         if len(data) > MAX_COMMAND_BYTES:
             raise ValueError(f"command is {len(data)} bytes, limit {MAX_COMMAND_BYTES}")
-        self.feed(self.sim.command(text))
+        with self.lock:
+            self.feed(self.sim.command(text))
         return len(data) + 1
 
 
@@ -624,8 +630,9 @@ class SimSource:
         self.fps = fps
         self.auto_scenarios = auto_scenarios
         self.clock = clock
+        self.lock = threading.Lock()
         self.boards = {f"sim-{b}": SimBoard(f"sim-{b}", Simulator(b, seed=s, clock=clock),
-                                            pipeline)
+                                            pipeline, self.lock)
                        for b, s in (("2.4GHz", 24), ("5GHz", 5))}
         self._parsers = {b.sim.band: b.parser for b in self.boards.values()}
         self.scenario_idx = 0
@@ -634,10 +641,15 @@ class SimSource:
 
     def prime(self) -> None:
         """Boot lines first, so each board's band is latched before traffic."""
-        for board in self.boards.values():
-            board.feed(board.sim.boot_lines())
+        with self.lock:
+            for board in self.boards.values():
+                board.feed(board.sim.boot_lines())
 
     def step(self) -> None:
+        with self.lock:
+            self._step()
+
+    def _step(self) -> None:
         band = "2.4GHz" if random.random() < 0.65 else "5GHz"
         board = self.boards[f"sim-{band}"]
         board.feed(board.sim.background())
