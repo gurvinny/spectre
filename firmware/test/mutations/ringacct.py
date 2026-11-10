@@ -1,0 +1,22 @@
+"""Ring buffer byte accounting (q_hwm)."""
+TARGET = "spectre-sniffer/main/core/ringacct.c"
+
+MUTATIONS = [
+    ("no-alignment", "return ((len + RA_ALIGN - 1) & ~(RA_ALIGN - 1)) + RA_HEADER;",
+     "return len + RA_HEADER;", "test_item_bytes_match_the_idf_layout"),
+    ("no-header", "return ((len + RA_ALIGN - 1) & ~(RA_ALIGN - 1)) + RA_HEADER;",
+     "return ((len + RA_ALIGN - 1) & ~(RA_ALIGN - 1));", "test_item_bytes_match_the_idf_layout"),
+    ("align-rounds-down", "return ((len + RA_ALIGN - 1) & ~(RA_ALIGN - 1)) + RA_HEADER;",
+     "return (len & ~(RA_ALIGN - 1)) + RA_HEADER;", "test_item_bytes_match_the_idf_layout"),
+    ("hwm-uses-pre-add-value",
+     "unsigned now = atomic_fetch_add(&r->used, ra_item_bytes(len)) + ra_item_bytes(len);",
+     "unsigned now = atomic_fetch_add(&r->used, ra_item_bytes(len));", "test_hwm_keeps_the_peak"),
+    ("hwm-tracks-current", "while (now > hwm && !atomic", "while (now != hwm && !atomic",
+     "test_hwm_keeps_the_peak"),
+    ("sub-not-applied", "cur > n ? cur - n : 0", "cur > n ? cur : 0", "test_used_follows_adds_and_returns"),
+    ("sub-wraps-below-zero", "cur > n ? cur - n : 0", "cur - n", "test_mismatched_return_clamps_at_zero"),
+    ("sub-ignores-alignment", "    unsigned n = ra_item_bytes(len);", "    unsigned n = len + RA_HEADER;",
+     "test_used_follows_adds_and_returns"),
+    ("init-leaves-hwm", "    atomic_init(&r->hwm, 0);", "    atomic_init(&r->hwm, 4096);", "test_steady_flow_stays_small"),
+    ("init-leaves-used", "    atomic_init(&r->used, 0);", "    atomic_init(&r->used, 64);", "test_used_follows_adds_and_returns"),
+]

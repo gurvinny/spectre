@@ -38,6 +38,7 @@ void run_test(const char *name, void (*fn)(void));
 #define RUN(fn) run_test(#fn, fn)
 
 void suite_dot11(void);
+void suite_ringacct(void);
 void suite_ie(void);
 void suite_jsonw(void);
 void suite_cfg(void);

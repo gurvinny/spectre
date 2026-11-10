@@ -39,6 +39,7 @@
 #include "dot11.h"
 #include "ie.h"
 #include "line.h"
+#include "ringacct.h"
 
 #define UART_PORT UART_NUM_0
 #define UART_BAUD 460800
@@ -62,7 +63,8 @@ static cfg_t s_cfg;
 static atomic_uint s_cfg_gen;     /* bumped on every applied change */
 static atomic_uint s_epoch = 1;   /* hop epoch, for dedup */
 static atomic_uint s_rx_total, s_drop_queue, s_drop_short;
-static uint32_t s_emitted, s_drop_dedup, s_drop_overflow, s_q_hwm; /* emit task only */
+static uint32_t s_emitted, s_drop_dedup, s_drop_overflow; /* emit task only */
+static ring_acct_t s_ring_acct;   /* rx callback adds, emit task returns */
 static atomic_uint s_uart_bytes;
 static atomic_uint s_filter_mask = FILT_MGMT | FILT_DATA;
 static apc_t s_apc;
@@ -89,7 +91,7 @@ static void snapshot(counters_t *k)
     k->drop_short = atomic_load(&s_drop_short);
     k->drop_dedup = s_drop_dedup;
     k->drop_overflow = s_drop_overflow;
-    k->q_hwm = s_q_hwm;
+    k->q_hwm = ra_hwm(&s_ring_acct);
     k->q_size = RING_SIZE;
 }
 
@@ -147,6 +149,7 @@ static void rx_cb(void *buf, wifi_promiscuous_pkt_type_t type)
         atomic_fetch_add(&s_drop_queue, 1);
         return;
     }
+    ra_add(&s_ring_acct, sizeof(rx_item_t) + len);
     rx_item_t *it = slot;
     it->rm.rssi = rc->rssi;
     it->rm.noise = rc->noise_floor;
@@ -201,6 +204,12 @@ static void radio_init(const cfg_t *c)
 
 /* ---- tasks --------------------------------------------------------------- */
 
+static void ring_return(void *item, size_t sz)
+{
+    vRingbufferReturnItem(s_ring, item);
+    ra_sub(&s_ring_acct, (uint32_t)sz);
+}
+
 static void emit_task(void *arg)
 {
     (void)arg;
@@ -210,15 +219,12 @@ static void emit_task(void *arg)
         rx_item_t *it = xRingbufferReceive(s_ring, &sz, portMAX_DELAY);
         if (it == NULL)
             continue;
-        size_t used = RING_SIZE - xRingbufferGetCurFreeSize(s_ring);
-        if (used > s_q_hwm)
-            s_q_hwm = (uint32_t)used;
 
         const uint8_t *p = (const uint8_t *)(it + 1);
         d11_frame_t f;
         if (!d11_parse(p, it->len, &f)) {
             atomic_fetch_add(&s_drop_short, 1);
-            vRingbufferReturnItem(s_ring, it);
+            ring_return(it, sz);
             continue;
         }
         ie_info_t ie;
@@ -247,12 +253,12 @@ static void emit_task(void *arg)
             if (c.dedup && f.subtype == D11_ST_BEACON
                     && apc_dedup(&s_apc, f.bssid, atomic_load(&s_epoch), now)) {
                 s_drop_dedup++;
-                vRingbufferReturnItem(s_ring, it);
+                ring_return(it, sz);
                 continue;
             }
         }
         size_t n = line_frame(line, sizeof line, s_emitted + 1, now, &it->rm, &f, iep);
-        vRingbufferReturnItem(s_ring, it);
+        ring_return(it, sz);
         if (n == 0) {
             s_drop_overflow++;
             continue;
@@ -412,6 +418,7 @@ void app_main(void)
     s_ring = xRingbufferCreate(RING_SIZE, RINGBUF_TYPE_NOSPLIT);
     configASSERT(s_uart_lock && s_cfg_lock && s_ring);
     apc_init(&s_apc);
+    ra_init(&s_ring_acct);
 
     temperature_sensor_config_t tc = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
     if (temperature_sensor_install(&tc, &s_tsens) == ESP_OK)

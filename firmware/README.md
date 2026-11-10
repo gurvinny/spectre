@@ -132,7 +132,7 @@ EAPOL key information. Payloads never leave the board.
 | `boot` | Once at start | `chip`, `mode`, `band`, `channels` (`"1-13"` / `"36-165"` for the defaults, else a list), `dwell_ms`, `pin`, `filter`, `dedup`, `ap_info_s`, `fw`, `ver`, `elf_sha` (first 16 hex chars of the ELF sha256), `reset` reason, `baud`, `caps` |
 | `sniffer_started` | After the radio is up | `ch` |
 | `channel_sweep_complete` | Each pass through the channel list | `total_pkts` (= `emitted`, as in the original firmware), `sweep_ms`, counters |
-| `telemetry` | Every 10 s | counters, `q_hwm` / `q_size` (ring buffer bytes), `heap`, `heap_min`, `temp_dc` (chip temperature, 0.1 °C), `uart_bps` |
+| `telemetry` | Every 10 s | counters, `q_hwm` / `q_size` (peak bytes held in the receive ring since boot, item headers included, / ring size), `heap`, `heap_min`, `temp_dc` (chip temperature, 0.1 °C), `uart_bps` |
 | `clock_sync` | Every 10 s | `uptime_ms` and the 64-bit monotonic `mono_us`, for mapping `ts` onto host time |
 | `ap_info` | First beacon/probe response from a BSSID, whenever its advertised configuration changes, and every `ap_info_s` seconds | `bssid`, `ch`, `ds_ch`, `ssid`, beacon interval `bi`, capability `cap`, `sec` (`OPEN`, `WEP`, `WPA`, `WPA2`, `WPA2/WPA3`, `WPA3`, `OWE`, `ENT`), `akm`, `pairwise`, `group`, `pmf` (`none` / `capable` / `required`), `wpa1`, `ht`, `vht`, `he`, `eht`, `ht_sec`, `wps`, `csa` (`mode`, `ch`, `count`), `ouis`, `hash` |
 | `cmd_ack` | After every command | `cmd`, `id`, `ok`, `err`, the resulting `config` |

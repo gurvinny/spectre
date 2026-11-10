@@ -10,8 +10,8 @@
 
 #include <stdlib.h>
 
-#define MIN_TESTS 57
-#define MIN_ASSERTS 836
+#define MIN_TESTS 62
+#define MIN_ASSERTS 854
 
 int g_asserts;
 static int g_tests, g_failed, g_extra, g_fail_total;
@@ -58,6 +58,7 @@ int main(void)
     suite_cfg();
     suite_apcache();
     suite_line();
+    suite_ringacct();
 
     printf("\n%d tests, %d assertions, %d failed\n", g_tests, g_asserts, g_failed);
     if (g_failed)
