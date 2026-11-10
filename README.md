@@ -435,11 +435,8 @@ Built by **[gurvinny](https://github.com/gurvinny)**.
 Licensed under the **GNU AGPL-3.0-or-later** — see [LICENSE](LICENSE). Copyright © 2026 gurvinny.
 If you host a modified version, the AGPL requires you to publish your changes under the same open license.
 
-**Commercial License:** To use SPECTRE in a closed-source or commercial product without the AGPL's source-disclosure obligations, a separate commercial license is available — reach out via [github.com/gurvinny](https://github.com/gurvinny).
-
-Offering that commercial option depends on one author holding copyright in the entire codebase, which
-is why SPECTRE does not accept code contributions — see [CONTRIBUTING.md](CONTRIBUTING.md). Bug
-reports and feature requests are welcome in [Issues](../../issues).
+SPECTRE does not accept code contributions — see [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and
+feature requests are welcome in [Issues](../../issues).
 
 <br/>
 

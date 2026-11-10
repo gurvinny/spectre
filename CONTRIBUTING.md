@@ -3,12 +3,8 @@
 SPECTRE is a single-author project and **does not accept code contributions**. Please do not open
 pull requests — they will be closed unmerged.
 
-This is not a judgement on anyone's code. SPECTRE is dual-licensed: AGPL-3.0-or-later for everyone,
-plus a separate commercial licence for closed-source use. Offering that second licence requires one
-author to hold copyright in the whole codebase. A merged contribution stays the contributor's
-copyright, licensed to the project under the AGPL only, which would make the commercial option
-impossible to honour without tracking down every past contributor for permission. Declining code up
-front is the honest way to keep that promise.
+This is not a judgement on anyone's code. SPECTRE is licensed under AGPL-3.0-or-later, and you are
+free to fork and modify it under those terms (see below).
 
 ## What is welcome
 
