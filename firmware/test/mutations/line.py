@@ -40,4 +40,7 @@ MUTATIONS = [
     ("ack-err-dropped", "    if (cmd->err)\n        jw_str(&w, \"err\", cmd->err);", "", "test_ack_lines"),
     ("ctrl-filter-name", "    if (c->filter & FILT_CTRL) jw_str(w, NULL, \"ctrl\");", "", "test_ack_lines"),
     ("no-newline", "    jw_raw(w, \"\\n\");", "", "test_beacon_line_keeps_original_keys"),
+    ("telemetry-ver-dropped", '        jw_str(&w, "ver", fw->ver);\n', "", "test_lifecycle_lines"),
+    ("telemetry-sha-dropped", '        jw_str(&w, "elf_sha", fw->elf_sha);\n', "", "test_lifecycle_lines"),
+    ("telemetry-null-fw-emits", "    if (fw) {\n        jw_str(&w, \"ver\"", "    if (fw || 1) {\n        jw_str(&w, \"ver\"", "test_lifecycle_lines"),
 ]

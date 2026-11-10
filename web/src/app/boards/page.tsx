@@ -85,7 +85,9 @@ function BoardCard({ board, now, control, onChange }: {
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
           <Stat label="Firmware"
             value={fw?.ver ? `${fw.ver}` : fw ? "original" : "—"}
-            sub={fw?.baud ? `${fw.baud} baud` : fw ? "no telemetry" : undefined} />
+            color={fw?.boot_missed ? levelColor("warn") : undefined}
+            sub={fw?.elf_sha ? `${fw.elf_sha.slice(0, 8)} · ${fw.baud ? `${fw.baud} baud` : "baud ?"}`
+              : fw?.baud ? `${fw.baud} baud` : fw ? "no telemetry" : undefined} />
           <Stat label="Channels" value={board.plan.channels ?? "—"}
             sub={board.plan.dwell_ms != null ? `${board.plan.dwell_ms} ms dwell` : undefined} />
           <Stat label="Pinned" value={board.plan.pin ? `ch ${board.plan.pin}` : "no"} />
@@ -102,6 +104,13 @@ function BoardCard({ board, now, control, onChange }: {
           <Stat label="Heap min" value={h.heap_min != null ? `${compact(h.heap_min)}B` : "—"} />
           <Stat label="Temp" value={h.temp_c != null ? `${h.temp_c.toFixed(1)}°C` : "—"} />
         </dl>
+        {fw?.boot_missed && (
+          <p data-testid="boot-missed" className="mt-3 text-xs" style={{ color: levelColor("warn") }}>
+            Boot line missed: this board restarted while nothing was reading its port.
+            Version is from telemetry; reset reason, baud and plan may be from an earlier boot.
+            Reboot the board with the sensor running to refresh them.
+          </p>
+        )}
         {control && <BoardControls board={board} onChange={onChange} />}
       </Panel>
     </div>

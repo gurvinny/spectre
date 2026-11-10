@@ -147,7 +147,10 @@ export interface Board {
     reset: string | null;
     baud: number | null;
     caps: string[] | null;
-    booted_at: number;
+    booted_at: number | null;
+    /** The board restarted while nothing read its port: the stored boot line is
+     *  from an earlier boot. ver/elf_sha still come from telemetry. */
+    boot_missed?: boolean;
   } | null;
   plan: {
     channels: string | null;

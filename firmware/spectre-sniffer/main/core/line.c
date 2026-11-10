@@ -287,7 +287,7 @@ size_t line_sweep(char *buf, size_t cap, uint32_t uptime_ms, uint32_t sweep_ms,
 
 size_t line_telemetry(char *buf, size_t cap, uint32_t uptime_ms, const counters_t *k,
                       uint32_t heap_free, uint32_t heap_min, int temp_dc,
-                      uint32_t uart_bps)
+                      uint32_t uart_bps, const fw_info_t *fw)
 {
     jw_t w;
     begin(&w, buf, cap);
@@ -301,6 +301,12 @@ size_t line_telemetry(char *buf, size_t cap, uint32_t uptime_ms, const counters_
     if (temp_dc != TEMP_UNKNOWN)
         jw_int(&w, "temp_dc", temp_dc);
     jw_int(&w, "uart_bps", uart_bps);
+    /* The running image, every 10 s: a host that missed the boot line (it
+     * opened the port after the board booted) still learns what runs. */
+    if (fw) {
+        jw_str(&w, "ver", fw->ver);
+        jw_str(&w, "elf_sha", fw->elf_sha);
+    }
     return end(&w);
 }
 

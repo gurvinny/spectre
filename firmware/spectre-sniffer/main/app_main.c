@@ -70,6 +70,7 @@ static atomic_uint s_filter_mask = FILT_MGMT | FILT_DATA;
 static apc_t s_apc;
 static temperature_sensor_handle_t s_tsens;
 static char s_ver[32], s_sha[17];
+static fw_info_t s_fw;            /* set once in app_main, read by telemetry */
 
 static uint32_t uptime_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
@@ -319,7 +320,7 @@ static void hop_task(void *arg)
             snapshot(&k);
             uart_line(line, line_telemetry(line, sizeof line, now, &k,
                       (uint32_t)esp_get_free_heap_size(),
-                      (uint32_t)esp_get_minimum_free_heap_size(), temp_dc, bps));
+                      (uint32_t)esp_get_minimum_free_heap_size(), temp_dc, bps, &s_fw));
             last_tel = now;
         }
         if (now - last_clock >= CLOCK_SYNC_MS) {
@@ -432,8 +433,8 @@ void app_main(void)
     const esp_app_desc_t *app = esp_app_get_description();
     snprintf(s_ver, sizeof s_ver, "%s", app->version);
     esp_app_get_elf_sha256(s_sha, sizeof s_sha);
-    fw_info_t fw = {.ver = s_ver, .elf_sha = s_sha,
-                    .reset = reset_name(esp_reset_reason()), .baud = UART_BAUD};
+    s_fw = (fw_info_t){.ver = s_ver, .elf_sha = s_sha,
+                       .reset = reset_name(esp_reset_reason()), .baud = UART_BAUD};
 
     /* The console shares UART0 with the data lines and writes without the
      * line lock, so any log line splices into the middle of a JSON line and
@@ -441,7 +442,7 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_NONE);
 
     static char line[LINE_BUF];
-    uart_line(line, line_boot(line, sizeof line, &fw, &s_cfg));
+    uart_line(line, line_boot(line, sizeof line, &s_fw, &s_cfg));
     radio_init(&s_cfg);
     uart_line(line, line_started(line, sizeof line, s_cfg.pin ? s_cfg.pin : s_cfg.ch[0]));
 

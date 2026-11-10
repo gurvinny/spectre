@@ -115,6 +115,47 @@ class TestSummarize(unittest.TestCase):
         self.assertEqual(s["health"]["uptime_ms"], 60000)
         self.assertAlmostEqual(s["health"]["loss_pct"], 3.5)
 
+    def test_telemetry_names_the_running_image(self):
+        # boot row at 100 s; telemetry at 162 s with 60 s uptime implies 102 s:
+        # the same boot, so the boot row's own time stays
+        tel = dict(TELEMETRY, ver="2.0.3", elf_sha="aaaabbbbccccdddd")
+        s = boards.summarize("ttyUSB1", {"boot": row("boot", BOOT_V2, 100.0),
+                                         "telemetry": row("telemetry", tel, 162.0)}, False)
+        self.assertEqual((s["firmware"]["ver"], s["firmware"]["elf_sha"]), ("2.0.3", "aaaabbbbccccdddd"))
+        self.assertIs(s["firmware"]["boot_missed"], False)
+        self.assertEqual(s["firmware"]["booted_at"], 100.0)
+        self.assertEqual(s["firmware"]["baud"], 460800)          # boot-only facts kept
+
+    def test_a_missed_boot_is_flagged_and_dated_from_telemetry(self):
+        # telemetry at 1000 s with 60 s uptime: booted ~940 s, long after the stored boot
+        tel = dict(TELEMETRY, ver="2.0.3", elf_sha="aaaabbbbccccdddd")
+        s = boards.summarize("ttyUSB1", {"boot": row("boot", BOOT_V2, 100.0),
+                                         "telemetry": row("telemetry", tel, 1000.0)}, False)
+        self.assertTrue(s["firmware"]["boot_missed"])
+        self.assertEqual(s["firmware"]["ver"], "2.0.3")
+        self.assertAlmostEqual(s["firmware"]["booted_at"], 940.0)
+
+    def test_old_telemetry_without_ver_still_flags_a_missed_boot(self):
+        s = boards.summarize("ttyUSB1", {"boot": row("boot", BOOT_V2, 100.0),
+                                         "telemetry": row("telemetry", TELEMETRY, 1000.0)}, False)
+        self.assertTrue(s["firmware"]["boot_missed"])
+        self.assertEqual(s["firmware"]["ver"], "2.0.0")          # nothing better to show
+        self.assertEqual(s["firmware"]["booted_at"], 100.0)
+
+    def test_boot_within_slack_is_not_missed(self):
+        # implied boot 4 s after the stored row: serial latency, not a missed boot
+        s = boards.summarize("ttyUSB1", {"boot": row("boot", BOOT_V2, 100.0),
+                                         "telemetry": row("telemetry", TELEMETRY, 164.0)}, False)
+        self.assertFalse(s["firmware"]["boot_missed"])
+
+    def test_telemetry_alone_gives_a_firmware_card(self):
+        tel = dict(TELEMETRY, ver="2.0.3", elf_sha="aaaabbbbccccdddd")
+        s = boards.summarize("ttyUSB1", {"telemetry": row("telemetry", tel, 160.0)}, False)
+        self.assertEqual(s["firmware"]["ver"], "2.0.3")
+        self.assertIsNone(s["firmware"]["baud"])
+        self.assertAlmostEqual(s["firmware"]["booted_at"], 100.0)
+        self.assertIs(s["firmware"]["boot_missed"], False)
+
     def test_band_comes_from_the_newest_row(self):
         latest = {"boot": row("boot", BOOT_V2, 100.0, band="5GHz"),
                   "cmd_ack": row("cmd_ack", {"ok": True}, 200.0, band="2.4GHz")}

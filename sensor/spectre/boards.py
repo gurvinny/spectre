@@ -26,6 +26,10 @@ UART_BITS_PER_BYTE = 10     # 8N1: start + 8 data + stop
 
 _FIRMWARE_KEYS = ("chip", "fw", "ver", "elf_sha", "reset", "baud", "caps")
 _PLAN_KEYS = ("channels", "dwell_ms", "pin", "filter", "dedup", "ap_info_s")
+# A boot row older than the boot that telemetry implies (received_at minus
+# uptime) by more than this was missed: the board restarted while nothing read
+# the port. Covers serial latency and the host clock's jitter.
+BOOT_SLACK_S = 5.0
 _COUNTER_KEYS = ("rx_total", "emitted", "drop_queue", "drop_short", "drop_dedup",
                  "drop_overflow")
 
@@ -104,6 +108,22 @@ def summarize(sensor_id: str, latest: Mapping[str, dict], controllable: bool) ->
     if boot:
         firmware = {k: boot_p.get(k) for k in _FIRMWARE_KEYS}
         firmware["booted_at"] = boot["received_at"]
+    # Telemetry names the running image every 10 s (firmware >= 2.0.3), and its
+    # uptime dates the current boot, so a boot line the host never saw cannot
+    # leave a stale version on the card.
+    tel_p = tel["payload"] if tel else {}
+    uptime = _num(tel_p.get("uptime_ms"))
+    booted = tel["received_at"] - uptime / 1000 if uptime is not None else None
+    boot_missed = bool(boot and booted is not None
+                       and booted > boot["received_at"] + BOOT_SLACK_S)
+    if isinstance(tel_p.get("ver"), str):
+        firmware = dict(firmware or dict.fromkeys(_FIRMWARE_KEYS))
+        firmware["ver"] = tel_p["ver"]
+        firmware["elf_sha"] = tel_p.get("elf_sha")
+        if boot is None or boot_missed:
+            firmware["booted_at"] = booted
+    if firmware is not None:
+        firmware["boot_missed"] = boot_missed
 
     sweep_newer = bool(sweep and (tel is None or sweep["received_at"] > tel["received_at"]))
     return {

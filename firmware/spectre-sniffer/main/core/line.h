@@ -74,7 +74,7 @@ size_t line_sweep(char *buf, size_t cap, uint32_t uptime_ms, uint32_t sweep_ms,
                   const counters_t *k);
 size_t line_telemetry(char *buf, size_t cap, uint32_t uptime_ms, const counters_t *k,
                       uint32_t heap_free, uint32_t heap_min, int temp_dc,
-                      uint32_t uart_bps);
+                      uint32_t uart_bps, const fw_info_t *fw);
 size_t line_clock(char *buf, size_t cap, uint32_t uptime_ms, uint64_t mono_us);
 size_t line_ack(char *buf, size_t cap, const cmd_t *cmd, const cfg_t *c);
 

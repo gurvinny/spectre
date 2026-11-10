@@ -330,13 +330,17 @@ static void test_lifecycle_lines(void)
                    "\"drop_queue\":4,\"drop_short\":3,\"drop_dedup\":2,\"drop_overflow\":1}\n");
     sample(out);
 
-    CHECK(line_telemetry(out, sizeof out, 20000, &k, 150000, 120000, 412, 23040) > 0);
+    fw_info_t img = {.ver = "2.0.3", .elf_sha = "0123456789abcdef", .reset = "poweron",
+                     .baud = 460800};
+    CHECK(line_telemetry(out, sizeof out, 20000, &k, 150000, 120000, 412, 23040, &img) > 0);
     CHECK_HAS(out, "\"event\":\"telemetry\",\"uptime_ms\":20000,\"rx_total\":1000,");
     CHECK_HAS(out, "\"q_hwm\":2048,\"q_size\":32768,\"heap\":150000,\"heap_min\":120000,"
-                   "\"temp_dc\":412,\"uart_bps\":23040}\n");
+                   "\"temp_dc\":412,\"uart_bps\":23040,\"ver\":\"2.0.3\","
+                   "\"elf_sha\":\"0123456789abcdef\"}\n");
     sample(out);
-    CHECK(line_telemetry(out, sizeof out, 20000, &k, 1, 1, TEMP_UNKNOWN, 0) > 0);
+    CHECK(line_telemetry(out, sizeof out, 20000, &k, 1, 1, TEMP_UNKNOWN, 0, NULL) > 0);
     CHECK_LACKS(out, "temp_dc");
+    CHECK_LACKS(out, "\"ver\"");                    /* no image info: no keys */
 
     CHECK(line_clock(out, sizeof out, 30000, 30000123456ULL) > 0);
     CHECK_STR(out, LINE_PREFIX "{\"event\":\"clock_sync\",\"uptime_ms\":30000,\"mono_us\":30000123456}\n");
