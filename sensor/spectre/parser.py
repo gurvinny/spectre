@@ -14,7 +14,13 @@ Wire format observed live from the ESP32-C5 firmware::
 * Boot-ROM banner lines (``ESP-ROM:...``) contain no JSON and are ignored.
 * An optional ``on_lifecycle`` callback receives one record per lifecycle line
   (``received_at``, ``sensor_id``, latched ``band``, ``kind``, ``payload``), so
-  reboots and the firmware's own sweep counters can be stored.
+  reboots, sweep counters, telemetry, clock syncs and command acks are stored.
+* ``ap_info`` lines (v2 firmware: one AP's advertised security and
+  capabilities) go to ``on_ap_info`` when given, else to ``on_lifecycle``.
+* A successful ``cmd_ack`` reports the board's resulting config; a band switch
+  takes effect without a reboot, so its ``config.band`` is latched too.
+* v2 frame keys become typed :class:`Event` fields (``docs/data-contract.md``);
+  a value of the wrong JSON type becomes ``None`` rather than a bad column.
 
 Author: gurvinny
 Project: SPECTRE
@@ -30,6 +36,16 @@ from .models import Event, now
 # Strip an optional leading "<PRI>" and an optional "word word:" tag, then we
 # hunt for the JSON body starting at the first "{".
 _PRI_RE = re.compile(r"^<\d{1,3}>")
+
+# Frame keys of the original firmware, handled explicitly below.
+_V1_KEYS = {"seq", "uptime_ms", "ch", "rssi", "type", "src", "dst", "bssid", "ssid"}
+# v2 frame keys -> Event field, for integer and string values.
+_V2_INTS = {"sub": "sub", "nf": "nf", "mcs": "mcs", "bw": "bw", "rate": "rate",
+            "ts": "ts_us", "sn": "sn", "fl": "fc_flags", "dur": "dur",
+            "reason": "reason", "aalg": "auth_alg", "aseq": "auth_seq",
+            "st": "status", "eapol": "eapol"}
+_V2_STRS = {"phy": "phy", "fp": "probe_fp"}
+_KNOWN_KEYS = _V1_KEYS | set(_V2_INTS) | set(_V2_STRS) | {"ouis"}
 
 
 def _extract_json(line: str) -> Optional[dict]:
@@ -53,12 +69,14 @@ class Parser:
     """
 
     def __init__(self, sensor_id: str, default_band: str = "unknown",
-                 on_lifecycle: Optional[Callable[[dict], None]] = None) -> None:
+                 on_lifecycle: Optional[Callable[[dict], None]] = None,
+                 on_ap_info: Optional[Callable[[dict], None]] = None) -> None:
         self.sensor_id = sensor_id
         self.band = default_band
         self.malformed = 0
         self.last_event_kind: Optional[str] = None
         self.on_lifecycle = on_lifecycle
+        self.on_ap_info = on_ap_info
 
     def parse_line(self, raw: str) -> Optional[Event]:
         """Parse one line. Returns an :class:`Event` for frame lines.
@@ -84,11 +102,16 @@ class Parser:
             kind = str(obj.get("event"))
             self.last_event_kind = kind
             if kind == "boot":
-                band = obj.get("band")
-                if isinstance(band, str) and band:
-                    self.band = band
-            if self.on_lifecycle is not None:
-                self.on_lifecycle({
+                self._latch_band(obj.get("band"))
+            elif kind == "cmd_ack" and obj.get("ok") is True:
+                config = obj.get("config")
+                if isinstance(config, dict):
+                    self._latch_band(config.get("band"))
+            sink = self.on_lifecycle
+            if kind == "ap_info" and self.on_ap_info is not None:
+                sink = self.on_ap_info
+            if sink is not None:
+                sink({
                     "received_at": now(), "sensor_id": self.sensor_id,
                     "band": self.band, "kind": kind,
                     "payload": {k: v for k, v in obj.items() if k != "event"},
@@ -114,9 +137,14 @@ class Parser:
             ssid = None
 
         # Preserve any unexpected keys for forward-compatibility.
-        known = {"seq", "uptime_ms", "ch", "rssi", "type",
-                 "src", "dst", "bssid", "ssid"}
-        extra = {k: v for k, v in obj.items() if k not in known}
+        extra = {k: v for k, v in obj.items() if k not in _KNOWN_KEYS}
+        v2: dict = {field: _as_int(obj.get(key)) for key, field in _V2_INTS.items()}
+        for key, field in _V2_STRS.items():
+            v = obj.get(key)
+            v2[field] = v if isinstance(v, str) and v else None
+        ouis = obj.get("ouis")
+        v2["ouis"] = (",".join(o for o in ouis if isinstance(o, str) and o) or None
+                      if isinstance(ouis, list) else None)
 
         return Event(
             received_at=now(),
@@ -132,7 +160,12 @@ class Parser:
             bssid=_as_mac(obj.get("bssid")),
             ssid=ssid if isinstance(ssid, str) else None,
             extra=extra,
+            **v2,
         )
+
+    def _latch_band(self, band) -> None:
+        if isinstance(band, str) and band:
+            self.band = band
 
 
 def _as_int(v) -> Optional[int]:

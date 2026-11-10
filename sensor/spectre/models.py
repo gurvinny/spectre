@@ -19,6 +19,15 @@ MGMT_TYPES = {"BEACON", "PROBE_REQ", "PROBE_RESP", "ASSOC_REQ", "ASSOC_RESP",
 BROADCAST_MAC = "FF:FF:FF:FF:FF:FF"
 
 
+# frames table columns, in Event.to_row() order. The first 12 are the original
+# schema; the rest were added for the v2 firmware (store migrates old DBs).
+FRAME_COLUMNS = ("received_at", "sensor_id", "band", "frame_type", "ch", "rssi",
+                 "seq", "uptime_ms", "src", "dst", "bssid", "ssid",
+                 "sub", "nf", "phy", "mcs", "bw", "rate", "ts_us", "sn",
+                 "fc_flags", "dur", "reason", "auth_alg", "auth_seq", "status",
+                 "eapol", "probe_fp", "ouis")
+
+
 @dataclass(slots=True)
 class Event:
     """A single normalized frame observation from one sensor board.
@@ -38,13 +47,35 @@ class Event:
     dst: Optional[str] = None
     bssid: Optional[str] = None
     ssid: Optional[str] = None     # None when the firmware reports "?"
+    # ── v2 firmware fields; all None on lines from the original firmware ──
+    sub: Optional[int] = None      # exact 802.11 subtype
+    nf: Optional[int] = None       # noise floor, dBm
+    phy: Optional[str] = None      # "b", "g", "a", "n", "ac", "ax", ...
+    mcs: Optional[int] = None
+    bw: Optional[int] = None       # MHz
+    rate: Optional[int] = None     # legacy rate code (11b/a/g)
+    ts_us: Optional[int] = None    # radio rx timestamp, 32-bit, wraps ~71 min
+    sn: Optional[int] = None       # 802.11 sequence number
+    fc_flags: Optional[int] = None  # frame-control flag byte (retry, protected, ...)
+    dur: Optional[int] = None      # Duration/ID
+    reason: Optional[int] = None   # deauth/disassoc reason (unprotected frames)
+    auth_alg: Optional[int] = None
+    auth_seq: Optional[int] = None
+    status: Optional[int] = None   # auth status code
+    eapol: Optional[int] = None    # 1-4 handshake message, 5 group key, 6 other
+    probe_fp: Optional[str] = None  # probe-request element fingerprint
+    ouis: Optional[str] = None     # vendor OUIs, comma list
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_row(self) -> tuple:
-        """Column tuple matching store.frames insert order."""
+        """Column tuple matching store.frames insert order (see FRAME_COLUMNS)."""
         return (self.received_at, self.sensor_id, self.band, self.frame_type,
                 self.ch, self.rssi, self.seq, self.uptime_ms,
-                self.src, self.dst, self.bssid, self.ssid)
+                self.src, self.dst, self.bssid, self.ssid,
+                self.sub, self.nf, self.phy, self.mcs, self.bw, self.rate,
+                self.ts_us, self.sn, self.fc_flags, self.dur, self.reason,
+                self.auth_alg, self.auth_seq, self.status, self.eapol,
+                self.probe_fp, self.ouis)
 
     def to_public(self) -> dict:
         """Compact dict for the live WebSocket feed / API."""

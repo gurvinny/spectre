@@ -27,7 +27,7 @@ import threading
 import time
 from typing import Any, Iterable, Optional
 
-from .models import Event, Threat, SEVERITY
+from .models import FRAME_COLUMNS, Event, Threat, SEVERITY
 
 log = logging.getLogger(__name__)
 
@@ -120,6 +120,34 @@ CREATE TABLE IF NOT EXISTS board_events (
 );
 CREATE INDEX IF NOT EXISTS idx_board_events_ts ON board_events(received_at);
 
+-- One row per ap_info line from the v2 firmware: an AP's advertised security
+-- and capabilities, on first sighting, on change and periodically. Typed
+-- columns for the common questions, the whole line in payload. Same retention
+-- as raw frames.
+CREATE TABLE IF NOT EXISTS ap_info (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at REAL NOT NULL,
+    sensor_id   TEXT,
+    band        TEXT,
+    bssid       TEXT,
+    why         TEXT,            -- new | changed | periodic
+    ch          INTEGER,         -- channel the radio was on
+    ds_ch       INTEGER,         -- channel the AP advertises
+    ssid        TEXT,
+    sec         TEXT,
+    pmf         TEXT,            -- none | capable | required
+    wpa1        INTEGER,
+    ht          INTEGER,
+    vht         INTEGER,
+    he          INTEGER,
+    eht         INTEGER,
+    wps         INTEGER,
+    hash        TEXT,
+    payload     TEXT             -- JSON
+);
+CREATE INDEX IF NOT EXISTS idx_ap_info_ts    ON ap_info(received_at);
+CREATE INDEX IF NOT EXISTS idx_ap_info_bssid ON ap_info(bssid);
+
 CREATE TABLE IF NOT EXISTS config (
     key       TEXT PRIMARY KEY,
     value     TEXT,            -- JSON-encoded
@@ -146,6 +174,34 @@ CREATE TABLE IF NOT EXISTS sessions (
 # Each returns (text, label, sub, band): `text` is tokenized/indexed; the rest
 # are stored UNINDEXED for rendering results without a join. MACs/BSSIDs are also
 # indexed colon-stripped so a partial like "2a2fd0" prefix-matches.
+# Columns added to `frames` for the v2 firmware, in FRAME_COLUMNS order.
+# `_migrate` adds whichever are missing, so a fresh database and an upgraded one
+# end up with the same columns in the same order. Never reorder or remove.
+_FRAME_V2_COLUMNS = (
+    ("sub", "INTEGER"), ("nf", "INTEGER"), ("phy", "TEXT"), ("mcs", "INTEGER"),
+    ("bw", "INTEGER"), ("rate", "INTEGER"), ("ts_us", "INTEGER"), ("sn", "INTEGER"),
+    ("fc_flags", "INTEGER"), ("dur", "INTEGER"), ("reason", "INTEGER"),
+    ("auth_alg", "INTEGER"), ("auth_seq", "INTEGER"), ("status", "INTEGER"),
+    ("eapol", "INTEGER"), ("probe_fp", "TEXT"), ("ouis", "TEXT"),
+)
+_INSERT_FRAME = (f"INSERT INTO frames({','.join(FRAME_COLUMNS)}) "
+                 f"VALUES({','.join('?' * len(FRAME_COLUMNS))})")
+
+_AP_INFO_BOOLS = ("wpa1", "ht", "vht", "he", "eht", "wps")
+
+
+def _flag(v: Any) -> Optional[int]:
+    return int(v) if isinstance(v, bool) else None
+
+
+def _int_or_none(v: Any) -> Optional[int]:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _str_or_none(v: Any) -> Optional[str]:
+    return v if isinstance(v, str) and v else None
+
+
 def _norm(mac: Optional[str]) -> str:
     return (mac or "").replace(":", "")
 
@@ -202,6 +258,7 @@ class Store:
             self._db.execute("PRAGMA synchronous=NORMAL")
             self._db.execute("PRAGMA foreign_keys=ON")
             self._db.executescript(_SCHEMA)
+            self._migrate()
             self._db.commit()
         # Full-text search index (FTS5). Created separately so a SQLite build
         # without FTS5 degrades to a LIKE fallback rather than failing startup.
@@ -209,16 +266,27 @@ class Store:
         if self._fts:
             self._reindex_all()
 
+    def _migrate(self) -> None:
+        """Bring an older database up to the current schema. Idempotent.
+
+        ``CREATE TABLE IF NOT EXISTS`` never changes an existing table, so new
+        ``frames`` columns are added here. ``ADD COLUMN`` with no default only
+        rewrites the schema, not the rows, so it is instant on a large table;
+        existing rows read the new columns as NULL. Caller holds the lock.
+        """
+        have = {r[1] for r in self._db.execute("PRAGMA table_info(frames)")}
+        for name, sql_type in _FRAME_V2_COLUMNS:
+            if name not in have:
+                self._db.execute(f"ALTER TABLE frames ADD COLUMN {name} {sql_type}")
+                log.info("migrated frames: added column %s", name)
+
     # ── Frames (high volume, batched) ──────────────────────────────────
     def insert_frames(self, events: Iterable[Event]) -> int:
         rows = [e.to_row() for e in events]
         if not rows:
             return 0
         with self._lock:
-            self._db.executemany(
-                "INSERT INTO frames(received_at,sensor_id,band,frame_type,ch,"
-                "rssi,seq,uptime_ms,src,dst,bssid,ssid) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+            self._db.executemany(_INSERT_FRAME, rows)
             self._db.commit()
         return len(rows)
 
@@ -367,6 +435,38 @@ class Store:
         return [{"received_at": r["received_at"], "sensor_id": r["sensor_id"],
                  "band": r["band"], "kind": r["kind"],
                  "payload": json.loads(r["payload"] or "{}")} for r in rows]
+
+    # ── AP security / capability lines (v2 firmware) ───────────────────
+    def insert_ap_info(self, rec: dict) -> None:
+        p = rec.get("payload") or {}
+        bssid = _str_or_none(p.get("bssid"))
+        ssid = _str_or_none(p.get("ssid"))
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO ap_info(received_at,sensor_id,band,bssid,why,ch,ds_ch,"
+                "ssid,sec,pmf,wpa1,ht,vht,he,eht,wps,hash,payload)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (rec.get("received_at", time.time()), rec.get("sensor_id"),
+                 rec.get("band"), bssid.upper() if bssid else None,
+                 _str_or_none(p.get("why")), _int_or_none(p.get("ch")),
+                 _int_or_none(p.get("ds_ch")), None if ssid == "?" else ssid,
+                 _str_or_none(p.get("sec")), _str_or_none(p.get("pmf")),
+                 *(_flag(p.get(k)) for k in _AP_INFO_BOOLS),
+                 _str_or_none(p.get("hash")), json.dumps(p)))
+            self._db.commit()
+
+    def ap_info(self, since: float = 0.0, limit: int = 10000) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM ap_info WHERE received_at>=?"
+                " ORDER BY received_at LIMIT ?", (since, limit)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d.pop("id", None)
+            d["payload"] = json.loads(d["payload"] or "{}")
+            out.append(d)
+        return out
 
     # ── Known networks (evil-twin allowlist) ──────────────────────────
     def list_known_networks(self) -> list[dict]:
@@ -637,6 +737,7 @@ class Store:
         with self._lock:
             cur = self._db.execute("DELETE FROM frames WHERE received_at < ?", (cutoff,))
             self._db.execute("DELETE FROM board_events WHERE received_at < ?", (cutoff,))
+            self._db.execute("DELETE FROM ap_info WHERE received_at < ?", (cutoff,))
             self._db.commit()
             return cur.rowcount
 

@@ -4,8 +4,8 @@ TESTS = "tests/test_board_events.py"
 
 MUTATIONS = [
     ('lifecycle-callback-never-called',
-     'if self.on_lifecycle is not None:',
-     'if False:',
+     'sink = self.on_lifecycle\n',
+     'sink = None\n',
      'test_each_lifecycle_line_is_handed_over'),
     ('event-key-leaks-into-payload',
      'if k != "event"}',

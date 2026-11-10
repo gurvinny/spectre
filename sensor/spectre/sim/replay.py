@@ -42,7 +42,8 @@ class ReplaySource:
         self.path = path
         self.speed = max(0.01, speed)
         self.loop = loop
-        self.parser = Parser("replay", on_lifecycle=pipeline.record_board_event)
+        self.parser = Parser("replay", on_lifecycle=pipeline.record_board_event,
+                             on_ap_info=pipeline.record_ap_info)
         self._task: Optional[asyncio.Task] = None
 
     async def run(self) -> None:

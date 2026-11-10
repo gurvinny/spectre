@@ -3,7 +3,8 @@
 
 Each line must carry the syslog prefix, hold exactly one valid JSON object,
 and be ingested by the sensor's real parser: frame lines become Events with
-the original keys intact, every other line is routed as a lifecycle event.
+the original keys intact and every other key typed (none left in ``extra``),
+every other line is routed as a lifecycle event.
 This is the firmware-to-sensor contract, checked without hardware.
 
 Author: gurvinny
@@ -56,6 +57,8 @@ def main(path: str) -> int:
                 errors.append(f"line {n}: ch/rssi mismatch")
             if "src" in obj and event.src != obj["src"]:
                 errors.append(f"line {n}: src mismatch")
+            if event.extra:
+                errors.append(f"line {n}: keys the sensor does not type: {sorted(event.extra)}")
         else:
             events.add(obj.get("event", "?"))
             if event is not None or len(lifecycle) != before + 1:

@@ -91,6 +91,9 @@ class Pipeline:
     def record_board_event(self, rec: dict) -> None:
         self.store.insert_board_event(rec)
 
+    def record_ap_info(self, rec: dict) -> None:
+        self.store.insert_ap_info(rec)
+
     # ── ingest (hot path, synchronous) ────────────────────────────────
     def ingest(self, ev: Event) -> None:
         self.total_frames += 1
