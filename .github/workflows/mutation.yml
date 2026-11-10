@@ -43,3 +43,11 @@ jobs:
         run: |
           cd web
           npm run test:mutate
+
+  firmware:
+    name: Firmware mutation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run mutation catalogues
+        run: python3 firmware/scripts/mutate.py

@@ -44,3 +44,10 @@ web/test-results/
 web/playwright-report/
 web/blob-report/
 web/playwright/.cache/
+
+# Firmware build output
+firmware/spectre-sniffer/build/
+firmware/spectre-sniffer/sdkconfig
+firmware/spectre-sniffer/sdkconfig.old
+firmware/spectre-sniffer/managed_components/
+firmware/test/out/
