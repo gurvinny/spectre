@@ -22,6 +22,11 @@ In scope:
 
 - Remote code execution, injection, or memory-safety issues in the ingest and parsing path
   (`sensor/spectre/parser.py`, `reader.py`, the detection rules)
+- Memory-safety issues in the firmware's over-the-air frame decoding (`firmware/spectre-sniffer/main/core/`):
+  a crafted 802.11 frame that crashes, hangs or corrupts a board, or makes it emit a line the sensor
+  misparses
+- Sending board commands without being signed in, or while `SPECTRE_BOARD_CONTROL` is off
+  (`POST /api/boards/{id}/cmd`)
 - Authentication bypass on the console or API, including the WebSocket upgrade path
 - Cross-site scripting or request forgery in the Next.js console
 - Unauthenticated access to captured data, or leakage of observed SSIDs, BSSIDs or MAC
@@ -41,6 +46,9 @@ Out of scope:
 ## Design constraints relevant to reports
 
 - The sensor forwards **threat summaries only, never raw frames**, to the configured SIEM
+- The firmware is receive-only (Wi-Fi in `NULL` mode, promiscuous receive); it has no transmit path
+- Board commands are off unless the operator sets `SPECTRE_BOARD_CONTROL=true`, and every command is
+  audited
 - The ingest and detection core is standard-library only, limiting the dependency attack surface
 - Console authentication is a single shared password by design; it is not a multi-user system,
   and reports that it lacks per-user accounts are not vulnerabilities

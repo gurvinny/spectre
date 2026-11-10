@@ -2,6 +2,57 @@
 
 SPECTRE forwards **threats and periodic summaries** (never raw frames) to Wazuh as RFC 5424 syslog.
 
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#0a0e12',
+    'primaryTextColor': '#fff',
+    'primaryBorderColor': '#35E0C4',
+    'lineColor': '#35E0C4',
+    'secondaryColor': '#0a0e12',
+    'tertiaryColor': '#0a0e12',
+    'actorBkg': '#0a0e12',
+    'actorBorder': '#35E0C4',
+    'actorTextColor': '#fff',
+    'signalColor': '#35E0C4',
+    'signalTextColor': '#C9D6DF',
+    'noteBkgColor': '#0a0e12',
+    'noteBorderColor': '#9B8CFF',
+    'noteTextColor': '#C9D6DF',
+    'labelBoxBkgColor': '#0a0e12',
+    'labelBoxBorderColor': '#9B8CFF',
+    'labelTextColor': '#fff',
+    'loopTextColor': '#C9D6DF',
+    'activationBkgColor': '#11171d',
+    'activationBorderColor': '#35E0C4',
+    'fontFamily': 'monospace'
+  }
+}}%%
+flowchart LR
+    F["raw frames<br/>(stay on the sensor)"] -.-x Z
+    T["Threat<br/>detect/"] --> W["WazuhForwarder<br/>RFC 5424 · local7"]
+    S["Summary ticker<br/>every 60 s"] --> W
+    W -- "UDP/TCP 514<br/>MSGID THREAT · SUMMARY" --> Z["Wazuh manager<br/>remote syslog"]
+    Z --> DC["decoder<br/>spectre → spectre-fields (pcre2)"]
+    DC --> R0["100600<br/>any event, level 3"]
+    R0 --> RS["100601-100604<br/>by severity, level 12/10/7/4"]
+    RS --> RD["100610-100614<br/>by detection + ATT&CK"]
+    RD --> A[("alerts.json")]
+
+    style F fill:#0a0e12,stroke:#9B8CFF,stroke-dasharray: 5 5,stroke-width:2px,color:#fff
+    style T fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style S fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style W fill:#0a0e12,stroke:#35E0C4,stroke-width:3px,color:#fff
+    style Z fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style DC fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style R0 fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style RS fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style RD fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style A fill:#0a0e12,stroke:#F5A623,stroke-width:2px,color:#fff
+```
+
+
 ## Wire format
 
 ```

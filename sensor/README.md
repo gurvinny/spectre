@@ -12,12 +12,15 @@ for the HTTP layer — so the pipeline can be smoke-tested without installing an
 
 | Module | Responsibility |
 |---|---|
-| `spectre/reader.py` | Async serial reader. Opens each port with **DTR/RTS held low** (via stdlib `termios`) so the ESP32-C5 doesn't reset, and streams lines into the pipeline. |
-| `spectre/parser.py` | Strips the `<PRI>` + `ESP32C5 wifi_sniffer:` tag, parses JSON, latches band from the boot event. |
+| `spectre/reader.py` | Async serial reader. Opens each port at `SERIAL_BAUD` with **DTR/RTS held low** (via stdlib `termios`) so the ESP32-C5 doesn't reset, streams lines into the pipeline, and `send()`s board commands. |
+| `spectre/parser.py` | Strips the `<PRI>` + `ESP32C5 wifi_sniffer:` tag, parses JSON, latches band from the boot event (and a successful `cmd_ack`). |
 | `spectre/models.py` | `Event` / `Threat` dataclasses + the severity ↔ syslog map. |
 | `spectre/pipeline.py` | The hot path: in-memory ring, device/AP inventory, batched writes, detection fan-out, WS broadcast, summaries, retention. |
 | `spectre/detect/` | One module per rule: `deauth_flood`, `evil_twin`, `flood`, `anomaly`. |
-| `spectre/store.py` | SQLite (WAL) — frames, inventory, threats, summaries, config, users, sessions; retention + disk guard. |
+| `spectre/store.py` | SQLite (WAL) — frames, `board_events`, `ap_info`, inventory, threats, summaries, config, users, sessions; retention + disk guard; additive schema migration. |
+| `spectre/boards.py` | Board health (firmware, radio plan, loss, UART load) from the newest lifecycle rows, and validation of console commands. |
+| `spectre/config.py` | Defaults, `.env` seeding on first run, live settings. |
+| `spectre/auth.py` | Single-admin auth: PBKDF2 password hashes, server-side session tokens. |
 | `spectre/wazuh.py` | RFC 5424 builder + UDP/TCP forwarder with severity mapping. |
 | `spectre/api.py` | FastAPI routes, cookie auth, `/ws` live feed. |
 | `spectre/main.py` | Wires it together and selects the ingest source. |
@@ -30,8 +33,9 @@ for the HTTP layer — so the pipeline can be smoke-tested without installing an
 docker build -t spectre-sensor . && \
 docker run --rm -e SPECTRE_SOURCE=sim -p 8100:8100 spectre-sensor
 
-# Real boards:
-docker run --rm --device /dev/ttyUSB0 -e SERIAL_PORTS=/dev/ttyUSB0 -p 8100:8100 spectre-sensor
+# Real boards (v2 firmware; use 115200 for the original):
+docker run --rm --device /dev/ttyUSB0 -e SERIAL_PORTS=/dev/ttyUSB0 -e SERIAL_BAUD=460800 \
+  -p 8100:8100 spectre-sensor
 ```
 
 ## Simulator & replay
@@ -61,6 +65,7 @@ bands + rotating `deauth_flood → reconnect → evil_twin → beacon_flood → 
 ## Test
 
 ```bash
+pip install -r requirements-dev.txt
 python scripts/run_tests.py    # whole suite, three shuffled orders, enforces the floors
 python scripts/mutate.py       # mutation catalogues in tests/mutations/
 ```

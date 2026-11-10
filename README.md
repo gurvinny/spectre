@@ -21,7 +21,7 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0-35E0C4.svg?style=flat-square&logo=gnu&logoColor=white&labelColor=0a0e12)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.14-35E0C4.svg?style=flat-square&logo=python&logoColor=white&labelColor=0a0e12)](sensor/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-35E0C4.svg?style=flat-square&logo=fastapi&logoColor=white&labelColor=0a0e12)](sensor/)
-[![Next.js](https://img.shields.io/badge/Next.js-15-C9D6DF.svg?style=flat-square&logo=nextdotjs&logoColor=white&labelColor=0a0e12)](web/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-C9D6DF.svg?style=flat-square&logo=nextdotjs&logoColor=white&labelColor=0a0e12)](web/)
 [![Tailwind](https://img.shields.io/badge/Tailwind-v4-9B8CFF.svg?style=flat-square&logo=tailwindcss&logoColor=white&labelColor=0a0e12)](web/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL-F5A623.svg?style=flat-square&logo=sqlite&logoColor=white&labelColor=0a0e12)](sensor/spectre/store.py)
 [![Wazuh](https://img.shields.io/badge/Wazuh-RFC%205424-FF4D5E.svg?style=flat-square&logo=wazuh&logoColor=white&labelColor=0a0e12)](docs/wazuh-integration.md)
@@ -35,11 +35,13 @@
   <a href="#-the-console"><b>The Console</b></a> &nbsp;·&nbsp;
   <a href="#-features"><b>Features</b></a> &nbsp;·&nbsp;
   <a href="#-architecture"><b>Architecture</b></a> &nbsp;·&nbsp;
+  <a href="#-hardware--firmware"><b>Hardware &amp; Firmware</b></a> &nbsp;·&nbsp;
   <a href="#-data-contract"><b>Data Contract</b></a> &nbsp;·&nbsp;
-  <a href="#-detection"><b>Detection</b></a> &nbsp;·&nbsp;
+  <a href="#-detection-rules"><b>Detection</b></a> &nbsp;·&nbsp;
   <a href="#-quick-start"><b>Quick Start</b></a> &nbsp;·&nbsp;
   <a href="#-testing"><b>Testing</b></a> &nbsp;·&nbsp;
   <a href="#-deployment"><b>Deployment</b></a> &nbsp;·&nbsp;
+  <a href="docs/README.md"><b>Docs</b></a> &nbsp;·&nbsp;
   <a href="#-author"><b>Author</b></a>
 </p>
 
@@ -49,7 +51,7 @@
 
 ## ✦ What It Does
 
-**SPECTRE** turns two **ESP32-C5** WiFi boards — one sniffing 2.4GHz, one on 5GHz — into a live, dual-band **wireless intrusion-detection system**. Each board runs promiscuous-mode firmware that streams every management and data frame it hears as JSON over UART.
+**SPECTRE** turns two **ESP32-C5** WiFi boards — one sniffing 2.4GHz, one on 5GHz — into a live, dual-band **wireless intrusion-detection system**. Each board runs SPECTRE's own open, receive-only firmware ([`firmware/`](firmware/README.md)), which streams every management and data frame it hears as JSON over UART, with drop counters so loss on the board is counted rather than silent.
 
 SPECTRE ingests both streams simultaneously, running attack-detection rules in real-time, rendering the threats in a beautiful, spectrum-analyzer–styled **SOC console**, and forwarding confirmed alerts to **Wazuh** as RFC 5424 syslog.
 
@@ -83,7 +85,7 @@ flowchart LR
     style F fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px
 ```
 
-> 💡 **Why it matters:** A single passive board hears ~30 frames/second in a normal home environment. SPECTRE keeps a rolling raw window for forensics, distills the rest into a complete device and AP inventory, and sends *only threats and periodic summaries* upstream. Your SIEM stays sharp instead of drowning in millions of frames per day.
+> 💡 **Why it matters:** A single passive board hears tens of frames per second in an ordinary home, and far more in a busy one. SPECTRE keeps a rolling raw window for forensics, distills the rest into a complete device and AP inventory, and sends *only threats and periodic summaries* upstream. Your SIEM stays sharp instead of drowning in millions of frames per day.
 
 ---
 
@@ -142,6 +144,8 @@ flowchart LR
 ## ✦ Features
 
 - 🎯 **Dual-band sensing** — 2.4GHz + 5GHz boards, each **auto-identified from its boot event** (USB re-enumeration can't mix them up).
+- 📟 **Open firmware** — One ESP-IDF image for both boards, band and channel plan set by command and kept in NVS. Per-frame radio and 802.11 detail, per-AP security summaries, and receive/drop counters. A flash tool verifies every board against the image it was given.
+- 🩺 **Board health and control** — The **Boards** page shows each board's firmware, channel plan, loss and UART load. Retune, reset or reboot a board from the console when `SPECTRE_BOARD_CONTROL=true`; every command is audited.
 - ⚡ **Real-time detection** — Detects deauth/disassoc floods, rogue APs, evil twins, beacon & probe floods, new devices, and RSSI anomalies. All server-side, tunable in Settings without reflashing.
 - 🎛️ **SOC threat console** — Live frame feed, complete device & AP inventory, threat log with a severity spine, channel-utilization spectrum sweeps, and throughput trends. Crafted with a dark RF-instrument aesthetic.
 - 🛡️ **Wazuh forwarding** — Native RFC 5424 over UDP/TCP. Syslog severity intelligently mapped from threat severity. Sends only threats and summaries to preserve SIEM efficiency. Editable at runtime.
@@ -158,7 +162,7 @@ Two services configured elegantly via a single `docker-compose.yml`:
 | Service | Stack | Port | Role |
 |---|---|---|---|
 | `sensor` | Python 3.14 · FastAPI · SQLite (stdlib core) | `8100` | UART ingest, detection, storage, Wazuh forwarding, API + WebSocket |
-| `web` | Next.js 15 · Tailwind v4 · ECharts · three / react-three-fiber | `4100` | The SOC console |
+| `web` | Next.js 16 · Tailwind v4 · ECharts · three / react-three-fiber | `4100` | The SOC console |
 
 ```mermaid
 %%{init: {
@@ -175,15 +179,16 @@ Two services configured elegantly via a single `docker-compose.yml`:
 }}%%
 flowchart LR
     subgraph ESP["Hardware Sensors"]
-        E1["[ESP32-C5 2.4G]"]
-        E2["[ESP32-C5 5G]"]
+        E1["ESP32-C5 · 2.4G<br/>fw v2 · 460800"]
+        E2["ESP32-C5 · 5G<br/>fw v2 · 460800"]
     end
 
     subgraph Sensor["SPECTRE Sensor (Port 8100)"]
-        R["Reader\n(async, DTR/RTS low)"]
-        I["Ingest\n(strip PRI, tag, parse JSON)"]
+        R["Reader<br/>(async, DTR/RTS low)"]
+        I["Parser<br/>(strip PRI, latch band, parse JSON)"]
         D{"Detection Engine"}
-        S[("SQLite\n(frames / devices\naps / threats)")]
+        S[("SQLite WAL<br/>frames · board_events · ap_info<br/>devices · aps · threats")]
+        B["Boards API<br/>(health + gated commands)"]
         W["WebSocket Server"]
         T["Summary Ticker"]
     end
@@ -195,16 +200,21 @@ flowchart LR
 
     E1 -- "ttyUSB0" --> R
     E2 -- "ttyUSB1" --> R
+    B -. "JSON command" .-> R
+    R -. "set / reboot" .-> E1
+    R -. "set / reboot" .-> E2
 
     R --> I
     I -- "Stamp" --> D
     I --> S
     I --> W
     I --> T
+    S --> B
 
     D -- "Threat Alerts" --> Z
     T -- "Tick Summaries" --> Z
     W -- "Live Stream" --> N
+    B -- "REST" --> N
 
     style ESP fill:transparent,stroke:#9B8CFF,stroke-width:1px,stroke-dasharray: 5 5,color:#fff
     style Sensor fill:transparent,stroke:#35E0C4,stroke-width:1px,stroke-dasharray: 5 5,color:#fff
@@ -216,6 +226,7 @@ flowchart LR
     style I fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
     style D fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
     style S fill:#0a0e12,stroke:#F5A623,stroke-width:2px,color:#fff
+    style B fill:#0a0e12,stroke:#9B8CFF,stroke-width:2px,color:#fff
     style W fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
     style T fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
     style N fill:#0a0e12,stroke:#C9D6DF,stroke-width:2px,color:#fff
@@ -226,19 +237,46 @@ flowchart LR
 
 ---
 
+## ✦ Hardware & Firmware
+
+Two ESP32-C5 development boards with a USB-to-UART bridge, two USB data cables, and a Linux host with
+Docker. That is the whole bill of materials; nothing transmits.
+
+| Step | Guide |
+|---|---|
+| Pick and connect the boards, get the ports into the container | [docs/hardware.md](docs/hardware.md) |
+| Flash both boards (CI image or your own build), verify, update, roll back | [docs/flashing.md](docs/flashing.md) |
+| Build the firmware, its line format, commands and counters | [firmware/README.md](firmware/README.md) |
+
+```bash
+docker compose stop sensor
+python3 firmware/flash.py --port /dev/ttyUSB0 --band 2.4GHz --build fw-image
+python3 firmware/flash.py --port /dev/ttyUSB1 --band 5GHz   --build fw-image
+# .env: SERIAL_BAUD=460800
+docker compose up -d sensor
+```
+
+Back up each board's flash before the first flash over its original firmware: it is the only way back.
+[docs/flashing.md](docs/flashing.md#3-back-up-each-board-once-before-the-first-flash) has the commands.
+
+---
+
 ## ✦ Data Contract
 
-Verified live from the hardware — each UART line follows this strict format:
+Each UART line is a syslog-tagged JSON object:
 
 ```json
-<190>ESP32C5 wifi_sniffer: {"seq":47,"uptime_ms":2728,"ch":6,"rssi":-55,
-                            "type":"BEACON","src":"..","dst":"..","bssid":"..","ssid":"ExampleNet"}
+<190>ESP32C5 wifi_sniffer: {"seq":47,"uptime_ms":2728,"ch":6,"rssi":-55,"type":"BEACON",
+                            "src":"..","dst":"..","bssid":"..","ssid":"ExampleNet","nf":-95,"phy":"g"}
 ```
 
 - `<190>` is a firmware-prepended syslog PRI (which SPECTRE strips).
-- The board sends no wall clock; **SPECTRE natively stamps arrival times.**
-- The `seq` identifier resets on reboot.
-- Band identification comes reliably from the `{"event":"boot","band":"2.4GHz"}` event line.
+- The board sends no wall clock; **SPECTRE stamps arrival times**, and `clock_sync` lines map the radio's
+  microsecond timestamps onto them.
+- `seq` counts frame lines since boot and resets on reboot; a gap is a line lost on the way to the host.
+- Band identification comes from the `{"event":"boot","band":"2.4GHz"}` line.
+- The v2 firmware (460800 baud) keeps every key of the original sniffer firmware (115200 baud) and only adds
+  new ones, so both are ingested.
 
 > **Deep Dive:** Full schema and volume notes in **[docs/data-contract.md](docs/data-contract.md)**.
 
@@ -284,7 +322,10 @@ docker compose up -d --build
 </div>
 
 ### 🧪 No boards attached?
-Run the integrated simulator instead. Set `SPECTRE_SOURCE=sim` in your `.env`, then run `docker compose up`. The console will fill with beautiful synthetic traffic and rotating attack scenarios.
+Run the integrated simulator instead. Set `SPECTRE_SOURCE=sim` in your `.env`, comment out the `devices:` block in `docker-compose.yml`, then run `docker compose up -d --build`. The console fills with synthetic traffic on both bands and rotating attack scenarios. Details in [Running without hardware](#running-without-hardware).
+
+### 📡 Boards attached?
+Flash them first: [docs/flashing.md](docs/flashing.md). Then set `SERIAL_BAUD=460800` in `.env` before `docker compose up`.
 
 ---
 
@@ -297,11 +338,13 @@ Everything has a sensible default in `.env` (see `.env.example`) and can be chan
 | Key | Default Value | Description |
 |---|---|---|
 | `SERIAL_PORTS` | `/dev/ttyUSB0,/dev/ttyUSB1` | Target boards (band is auto-detected). |
+| `SERIAL_BAUD` | `115200` | Must match the firmware: `460800` for the v2 firmware, `115200` for the original. Any other value stops the sensor at startup. Read on every start, not seeded. |
 | `SPECTRE_SOURCE` | `serial` | Run mode: `serial` · `sim` · `replay`. |
 | `WAZUH_HOST` / `WAZUH_PORT` | `10.0.0.20` / `514` | Target SIEM syslog destination. |
 | `RAW_RETENTION_HOURS` | `48` | Window for rolling raw-frame retention. |
 | `DISK_GUARD_PERCENT` | `85` | Early-prune threshold to prevent full disk. |
 | `SPECTRE_BOARD_CONTROL` | `false` | Allow board commands (retune, reset, reboot) from the **Boards** page. Read on every start, not seeded. Every command is audited in `board_events`. |
+| `NEXT_PUBLIC_EXPERIMENTAL` | `false` | Build-time: `true` adds the experimental 3D battlespace to the console. |
 | `SPECTRE_WEB_ORIGINS` | `http://HOST_IP:WEB_PORT` | Browser origin(s) allowed to call the API with the session cookie, comma separated. Read on every start, not seeded. Set it when the console is served from another address, for example behind the reverse-proxy overlay. |
 
 ---
@@ -310,7 +353,7 @@ Everything has a sensible default in `.env` (see `.env.example`) and can be chan
 
 Threats and summaries are natively sent as **RFC 5424** (`app-name=spectre`). Syslog severity is automatically mapped from the threat severity level:
 - `critical` → `crit`
-- `high` → `alert`
+- `high` → `err`
 - `medium` → `warning`
 - `low` → `notice`
 - `summary` → `info`
@@ -321,21 +364,22 @@ A sample decoder and ruleset to drop these perfectly into Wazuh live in **[docs/
 
 ## ✦ Testing
 
-The ingest, detection and storage core is **stdlib-only**, so the sensor suite runs with no
-third-party test tooling and no hardware attached.
+Three suites, none of which needs hardware. Each enforces a floor on its test and assertion counts, so a
+suite cannot quietly shrink, and each has a mutation runner that plants known bugs and fails if a test
+does not catch them.
 
 ```bash
-cd sensor && python -m unittest discover -s tests -p "test_*.py"   # 3 tests
-cd web    && npm run test                                          # 24 checks
-cd web    && npm run build                                         # production build
+cd sensor && pip install -r requirements-dev.txt && python scripts/run_tests.py   # three shuffled orders
+cd web    && npm run test && npm run lint && npm run build                         # lint = tsc --noEmit
+make -C firmware/test samples                  # firmware core under ASan + UBSan, line contract vs the parser
+
+python sensor/scripts/mutate.py                # mutation runs
+cd web && npm run test:mutate
+python3 firmware/scripts/mutate.py
 ```
 
-The web suite (`web/scripts/test.mjs`) bundles each `*.test.ts` with esbuild and runs it under
-`node --test`; it covers the 3D battlespace layout, model, edge-flow and adaptive-quality logic.
-Both suites run in CI on every push and pull request.
-
-`npm run lint` is defined but **ESLint is not installed** in `web/` — `tsc --noEmit` is the
-type-checking gate in practice.
+CI runs the suites, the firmware image build, the mutation runners, CodeQL, Trivy on the built images and
+a Playwright pass over the console on every pull request.
 
 ### Running without hardware
 
@@ -397,7 +441,7 @@ All routes are under `/api` and require an authenticated session cookie, except 
 
 Develop and test your configuration locally, then move the exact same compose configuration to your Proxmox LXC; **only `.env` needs to change.**
 
-Unprivileged LXCs require the USB adapters to be passed through via `lxc.cgroup2.devices.allow` + `lxc.mount.entry`. The exact steps, alongside the host-reader fallback strategy, are fully documented in **[docs/deployment.md](docs/deployment.md)**.
+Unprivileged LXCs require the USB adapters to be passed through via `lxc.cgroup2.devices.allow` + `lxc.mount.entry`. The exact steps, alongside the host-reader fallback strategy, are documented in **[docs/deployment.md](docs/deployment.md)**; port naming and the empty-file trap are in **[docs/hardware.md](docs/hardware.md#getting-the-ports-to-the-sensor)**.
 
 ---
 
@@ -424,7 +468,13 @@ path, the reader just fails to open it. Verify with `stat -c '%F' /dev/ttyUSB1`,
 
 **Wrong band on a sensor.** Band is latched from the `{"event":"boot","band":…}` line. On a
 reconnect without a board reset that line is never seen, so the parser falls back to the channel
-number (`ch >= 32` → 5GHz). Power-cycle the board to re-emit its boot event.
+number (`ch >= 32` → 5GHz). Reset the board with the sensor running to re-emit its boot event. On the
+v2 firmware a board's band is a setting: change it with `{"cmd":"set","band":"5GHz"}`.
+
+**The sensor exits right after starting.** `SERIAL_BAUD` is not a supported rate. Use `460800` for
+the v2 firmware or `115200` for the original.
+
+**Flashing problems.** See the troubleshooting table in [docs/flashing.md](docs/flashing.md#troubleshooting).
 
 ---
 
@@ -435,8 +485,9 @@ Built by **[gurvinny](https://github.com/gurvinny)**.
 Licensed under the **GNU AGPL-3.0-or-later** — see [LICENSE](LICENSE). Copyright © 2026 gurvinny.
 If you host a modified version, the AGPL requires you to publish your changes under the same open license.
 
-SPECTRE does not accept code contributions — see [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and
-feature requests are welcome in [Issues](../../issues).
+SPECTRE is written and maintained by one author, so pull requests are not merged. Bug reports,
+detection ideas and questions are very welcome in [Issues](../../issues); see
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to make them count.
 
 <br/>
 

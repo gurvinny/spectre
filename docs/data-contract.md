@@ -29,6 +29,54 @@ Every line the firmware emits looks like:
 Boot-ROM banner lines (`ESP-ROM:esp32c5-eco2-…`, `Build:…`, `rst:…`) carry no JSON and are ignored.
 Lines with `"type"` are frames; lines with `"event"` are everything else.
 
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#0a0e12',
+    'primaryTextColor': '#fff',
+    'primaryBorderColor': '#35E0C4',
+    'lineColor': '#35E0C4',
+    'secondaryColor': '#0a0e12',
+    'tertiaryColor': '#0a0e12',
+    'actorBkg': '#0a0e12',
+    'actorBorder': '#35E0C4',
+    'actorTextColor': '#fff',
+    'signalColor': '#35E0C4',
+    'signalTextColor': '#C9D6DF',
+    'noteBkgColor': '#0a0e12',
+    'noteBorderColor': '#9B8CFF',
+    'noteTextColor': '#C9D6DF',
+    'labelBoxBkgColor': '#0a0e12',
+    'labelBoxBorderColor': '#9B8CFF',
+    'labelTextColor': '#fff',
+    'loopTextColor': '#C9D6DF',
+    'activationBkgColor': '#11171d',
+    'activationBorderColor': '#35E0C4',
+    'fontFamily': 'monospace'
+  }
+}}%%
+sequenceDiagram
+    participant B as Board (fw v2)
+    participant P as Parser
+    participant DB as SQLite
+    B->>P: boot {band, fw, ver, elf_sha, baud, plan}
+    Note over P: latch band for this port
+    P->>DB: board_events (boot)
+    B->>P: sniffer_started
+    loop every frame
+        B->>P: {"seq":n, "type":..., radio + 802.11 keys}
+        P->>DB: frames (batched each 1 s)
+    end
+    B->>P: ap_info (first sighting, change, every ap_info_s)
+    P->>DB: ap_info
+    loop each sweep / every 10 s
+        B->>P: channel_sweep_complete · telemetry · clock_sync
+        P->>DB: board_events
+    end
+```
+
+
 ## Frame events
 
 ```json

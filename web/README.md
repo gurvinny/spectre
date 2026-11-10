@@ -1,8 +1,8 @@
 # SPECTRE · web
 
-[![Next.js](https://img.shields.io/badge/Next.js-15-C9D6DF.svg?style=flat-square&logo=nextdotjs&logoColor=white&labelColor=0a0e12)](.)
+[![Next.js](https://img.shields.io/badge/Next.js-16-C9D6DF.svg?style=flat-square&logo=nextdotjs&logoColor=white&labelColor=0a0e12)](.)
 [![Tailwind](https://img.shields.io/badge/Tailwind-v4-9B8CFF.svg?style=flat-square&logo=tailwindcss&logoColor=white&labelColor=0a0e12)](.)
-[![ECharts](https://img.shields.io/badge/ECharts-5.x-35E0C4.svg?style=flat-square&labelColor=0a0e12)](.)
+[![ECharts](https://img.shields.io/badge/ECharts-6.x-35E0C4.svg?style=flat-square&labelColor=0a0e12)](.)
 [![three](https://img.shields.io/badge/three%20%2F%20r3f-WebGL-9B8CFF.svg?style=flat-square&labelColor=0a0e12)](.)
 
 The SOC console — a spectrum-analyzer–styled dashboard over the sensor API.
@@ -22,8 +22,9 @@ speaks). The signature is the live **SPECTRE console banner** and the channel-ut
 | `/spectrum` | Channel-utilization analyzer + waterfall heatmap |
 | `/live` | Raw live frame feed |
 | `/inventory` | Devices and access points, with trust/mute and `active` / `archived` / `all` scopes |
+| `/boards` | Per-board firmware, radio plan, loss, UART load and queue peak; retune / reset / reboot when the sensor runs with `SPECTRE_BOARD_CONTROL=true` |
 | `/threats` | Detection log with a severity spine |
-| `/battlespace` | 3D WebGL view of the RF environment |
+| `/battlespace` | 3D WebGL view of the RF environment. **Experimental**: only built when `NEXT_PUBLIC_EXPERIMENTAL=true` |
 | `/settings` | Live config, Known Networks, appearance |
 
 All behind a single-password gate with a first-run setup wizard.
@@ -64,9 +65,9 @@ npm run build     # Next standalone output, served by the Docker runner on :3000
 ## Test
 
 ```bash
-npm run test      # 24 checks — esbuild-bundles each *.test.ts, runs under `node --test`
+npm run test          # esbuild-bundles each *.test.ts, runs under `node --test`, enforces a test floor
+npm run lint          # tsc --noEmit
+npm run test:mutate   # plants known bugs and fails if a test does not catch them
 ```
-
-`npm run lint` is defined but ESLint is **not** installed here; `npx tsc --noEmit` is the gate.
 
 _Author: gurvinny · Project: SPECTRE_

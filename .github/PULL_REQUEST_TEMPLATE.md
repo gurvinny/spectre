@@ -1,9 +1,10 @@
-> **SPECTRE does not accept code contributions.**
+> **Thanks for the interest in SPECTRE.**
 >
-> This is a single-author project, so outside code is not merged — see
-> [CONTRIBUTING.md](../CONTRIBUTING.md).
+> This is a single-author project, so pull requests from outside are closed without merging. That is
+> about keeping one hand on the design and the licence, not about the quality of your work.
 >
-> If you were about to report a bug, request a feature, or suggest a detection rule, please open an
-> [issue](../../issues) instead. Those are genuinely welcome.
+> The fastest way to get your idea in is an [issue](../../issues): describe the bug or the change (a
+> failing test case is ideal) and it will be written to fit the rest of the code. Security reports go
+> through **Security → Report a vulnerability** instead. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 >
-> You are free to fork and modify SPECTRE under the AGPL. You just cannot merge it back here.
+> Forks are welcome under the AGPL.

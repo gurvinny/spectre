@@ -5,6 +5,62 @@ All detection is server-side, over the normalized event stream, tuned live from 
 `Threat` is rate-limited by a per-signature cooldown (`threat_cooldown_seconds`) so one ongoing
 attack does not re-fire every frame.
 
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#0a0e12',
+    'primaryTextColor': '#fff',
+    'primaryBorderColor': '#35E0C4',
+    'lineColor': '#35E0C4',
+    'secondaryColor': '#0a0e12',
+    'tertiaryColor': '#0a0e12',
+    'actorBkg': '#0a0e12',
+    'actorBorder': '#35E0C4',
+    'actorTextColor': '#fff',
+    'signalColor': '#35E0C4',
+    'signalTextColor': '#C9D6DF',
+    'noteBkgColor': '#0a0e12',
+    'noteBorderColor': '#9B8CFF',
+    'noteTextColor': '#C9D6DF',
+    'labelBoxBkgColor': '#0a0e12',
+    'labelBoxBorderColor': '#9B8CFF',
+    'labelTextColor': '#fff',
+    'loopTextColor': '#C9D6DF',
+    'activationBkgColor': '#11171d',
+    'activationBorderColor': '#35E0C4',
+    'fontFamily': 'monospace'
+  }
+}}%%
+flowchart LR
+    E["Event<br/>(parsed frame)"] --> DF["deauth_flood<br/>per BSSID · 10 s"]
+    E --> ET["evil_twin<br/>Known Networks"]
+    E --> FL["flood<br/>per band · 5 s"]
+    E --> AN["anomaly<br/>new device · RSSI jump"]
+    DF --> CD{"cooldown<br/>per signature"}
+    ET --> CD
+    FL --> CD
+    AN --> CD
+    CD -- "suppressed" --> X["dropped"]
+    CD -- "new" --> TH["Threat"]
+    TH --> DB[("threats")]
+    TH --> WS["console /ws"]
+    TH --> WZ["Wazuh"]
+
+    style E fill:#0a0e12,stroke:#9B8CFF,stroke-width:2px,color:#fff
+    style DF fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style ET fill:#0a0e12,stroke:#b91c1c,stroke-width:2px,color:#fff
+    style FL fill:#0a0e12,stroke:#F5A623,stroke-width:2px,color:#fff
+    style AN fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style CD fill:#0a0e12,stroke:#C9D6DF,stroke-width:2px,color:#fff
+    style X fill:#0a0e12,stroke:#8598A6,stroke-dasharray: 5 5,stroke-width:1px,color:#fff
+    style TH fill:#0a0e12,stroke:#35E0C4,stroke-width:3px,color:#fff
+    style DB fill:#0a0e12,stroke:#F5A623,stroke-width:2px,color:#fff
+    style WS fill:#0a0e12,stroke:#C9D6DF,stroke-width:2px,color:#fff
+    style WZ fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+```
+
+
 ## Severity → syslog mapping
 
 | Threat severity | UI rank | Syslog severity | PRI (local7) |

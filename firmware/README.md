@@ -8,6 +8,66 @@ The radio never transmits: Wi-Fi runs in `NULL` mode with promiscuous receive on
 2.4 GHz (1-14) and 5 GHz (36-177) channel lists can be monitored without assuming a regulatory domain.
 Which of them you actually hop is up to you.
 
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#0a0e12',
+    'primaryTextColor': '#fff',
+    'primaryBorderColor': '#35E0C4',
+    'lineColor': '#35E0C4',
+    'secondaryColor': '#0a0e12',
+    'tertiaryColor': '#0a0e12',
+    'actorBkg': '#0a0e12',
+    'actorBorder': '#35E0C4',
+    'actorTextColor': '#fff',
+    'signalColor': '#35E0C4',
+    'signalTextColor': '#C9D6DF',
+    'noteBkgColor': '#0a0e12',
+    'noteBorderColor': '#9B8CFF',
+    'noteTextColor': '#C9D6DF',
+    'labelBoxBkgColor': '#0a0e12',
+    'labelBoxBorderColor': '#9B8CFF',
+    'labelTextColor': '#fff',
+    'loopTextColor': '#C9D6DF',
+    'activationBkgColor': '#11171d',
+    'activationBorderColor': '#35E0C4',
+    'fontFamily': 'monospace'
+  }
+}}%%
+flowchart LR
+    D["Wi-Fi driver<br/>promiscuous, NULL mode"] --> CB["rx_cb<br/>header + IEs + radio meta"]
+    CB -- "fits" --> RG[("ring buffer<br/>32 KB, no-split")]
+    CB -- "full" --> DQ["drop_queue++"]
+    RG --> EM["emit task"]
+    EM -- "too short" --> DS["drop_short++"]
+    EM --> DEC["core/: dot11 · ie · line"]
+    DEC --> AP["ap_info<br/>new · changed · every ap_info_s"]
+    DEC --> FR["frame line<br/>seq++"]
+    HP["hop task"] --> EV["sweep · telemetry · clock_sync"]
+    AP --> U(["UART0 · 460800"])
+    FR --> U
+    EV --> U
+    U -- "JSON commands" --> CM["cmd task"] --> NVS[("NVS config")]
+    NVS --> HP
+
+    style D fill:#0a0e12,stroke:#9B8CFF,stroke-dasharray: 5 5,stroke-width:2px,color:#fff
+    style CB fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style RG fill:#0a0e12,stroke:#F5A623,stroke-width:2px,color:#fff
+    style DQ fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style DS fill:#0a0e12,stroke:#FF4D5E,stroke-width:2px,color:#fff
+    style EM fill:#0a0e12,stroke:#35E0C4,stroke-width:3px,color:#fff
+    style DEC fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style AP fill:#0a0e12,stroke:#C9D6DF,stroke-width:2px,color:#fff
+    style FR fill:#0a0e12,stroke:#C9D6DF,stroke-width:2px,color:#fff
+    style HP fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style EV fill:#0a0e12,stroke:#C9D6DF,stroke-width:2px,color:#fff
+    style U fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style CM fill:#0a0e12,stroke:#35E0C4,stroke-width:2px,color:#fff
+    style NVS fill:#0a0e12,stroke:#F5A623,stroke-width:2px,color:#fff
+```
+
+
 ## Layout
 
 | Path | What it is |
@@ -30,6 +90,10 @@ idf.py build
 ```
 
 ## Flash
+
+The full operator procedure (getting an image, backups, verification, updates, rollback, troubleshooting)
+is in [docs/flashing.md](../docs/flashing.md); boards and cabling are in [docs/hardware.md](../docs/hardware.md).
+The short version:
 
 Stop whatever reads the port first (the sensor, a serial monitor): two readers on one port each see
 half the lines. Then:
@@ -132,8 +196,8 @@ EAPOL key information. Payloads never leave the board.
 | `boot` | Once at start | `chip`, `mode`, `band`, `channels` (`"1-13"` / `"36-165"` for the defaults, else a list), `dwell_ms`, `pin`, `filter`, `dedup`, `ap_info_s`, `fw`, `ver`, `elf_sha` (first 16 hex chars of the ELF sha256), `reset` reason, `baud`, `caps` |
 | `sniffer_started` | After the radio is up | `ch` |
 | `channel_sweep_complete` | Each pass through the channel list | `total_pkts` (= `emitted`, as in the original firmware), `sweep_ms`, counters |
-| `telemetry` | Every 10 s | counters, `q_hwm` / `q_size` (peak bytes held in the receive ring since boot, item headers included, / ring size), `heap`, `heap_min`, `temp_dc` (chip temperature, 0.1 °C), `uart_bps` |
-| `clock_sync` | Every 10 s | `uptime_ms` and the 64-bit monotonic `mono_us`, for mapping `ts` onto host time |
+| `telemetry` | Every 10 s, checked at dwell boundaries (so 10.2 s with a 300 ms dwell) | counters, `q_hwm` / `q_size` (peak bytes held in the receive ring since boot, item headers included, / ring size; can overshoot by one item, read `q_hwm >= q_size` as full: [#122](https://github.com/gurvinny/spectre/issues/122)), `heap`, `heap_min`, `temp_dc` (chip temperature, 0.1 °C), `uart_bps` (mean over the real elapsed interval) |
+| `clock_sync` | Every 10 s, at a dwell boundary | `uptime_ms` and the 64-bit monotonic `mono_us`, for mapping `ts` onto host time |
 | `ap_info` | First beacon/probe response from a BSSID, whenever its advertised configuration changes, and every `ap_info_s` seconds | `bssid`, `ch`, `ds_ch`, `ssid`, beacon interval `bi`, capability `cap`, `sec` (`OPEN`, `WEP`, `WPA`, `WPA2`, `WPA2/WPA3`, `WPA3`, `OWE`, `ENT`), `akm`, `pairwise`, `group`, `pmf` (`none` / `capable` / `required`), `wpa1`, `ht`, `vht`, `he`, `eht`, `ht_sec`, `wps`, `csa` (`mode`, `ch`, `count`), `ouis`, `hash` |
 | `cmd_ack` | After every command | `cmd`, `id`, `ok`, `err`, the resulting `config` |
 
@@ -180,6 +244,46 @@ Invalid input changes nothing and acks with `ok: false` and an `err`: `bad json`
 `unknown cmd`, `unknown key`, `bad band`, `bad channel`, `bad dwell`, `bad pin`, `bad filter`,
 `bad value` or `line too long`.
 
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#0a0e12',
+    'primaryTextColor': '#fff',
+    'primaryBorderColor': '#35E0C4',
+    'lineColor': '#35E0C4',
+    'secondaryColor': '#0a0e12',
+    'tertiaryColor': '#0a0e12',
+    'actorBkg': '#0a0e12',
+    'actorBorder': '#35E0C4',
+    'actorTextColor': '#fff',
+    'signalColor': '#35E0C4',
+    'signalTextColor': '#C9D6DF',
+    'noteBkgColor': '#0a0e12',
+    'noteBorderColor': '#9B8CFF',
+    'noteTextColor': '#C9D6DF',
+    'labelBoxBkgColor': '#0a0e12',
+    'labelBoxBorderColor': '#9B8CFF',
+    'labelTextColor': '#fff',
+    'loopTextColor': '#C9D6DF',
+    'activationBkgColor': '#11171d',
+    'activationBorderColor': '#35E0C4',
+    'fontFamily': 'monospace'
+  }
+}}%%
+stateDiagram-v2
+    direction LR
+    [*] --> Booting
+    Booting --> Hopping: boot line, sniffer_started
+    Hopping --> Hopping: dwell_ms per channel, sweep line per pass
+    Hopping --> Pinned: set pin = ch
+    Pinned --> Hopping: set pin = 0
+    Hopping --> Hopping: set channels / dwell_ms / filter (saved to NVS)
+    Hopping --> Booting: reboot command or RST
+    Pinned --> Booting: reboot command or RST
+```
+
+
 ## Limits
 
 - **One channel at a time.** While hopping, a board hears each channel for `dwell_ms` out of every sweep.
@@ -188,7 +292,7 @@ Invalid input changes nothing and acks with `ok: false` and an `err`: `bad json`
   (80/160 MHz) PPDUs are not received. Beacons and other management frames are still sent at 20 MHz
   and are seen.
 - **460800 baud** is about 46 KB/s. At a typical 280-300 byte line that is an estimated ~150 frame lines per
-  second; the measured ceiling will be documented after a long soak. Anything above it is counted in
+  second; the measured ceiling will be documented after a long soak ([#100](https://github.com/gurvinny/spectre/issues/100)). Anything above it is counted in
   `drop_queue` rather than lost silently.
 - `mcs` and `bw` are decoded from the PHY SIG field per the IEEE 802.11 layout; VHT/HE MU frames report no MCS.
 
