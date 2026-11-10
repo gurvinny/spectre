@@ -61,10 +61,10 @@ def sim_events(name: str, *, band: str = "2.4GHz", t0: float = 1000.0,
     for line in sim.boot_lines():
         parser.parse_line(line)
     out = []
-    for i, line in enumerate(sim.scenario(name)):
+    for line in sim.scenario(name):
         ev = parser.parse_line(line)
         if ev is not None:
-            out.append(dataclasses.replace(ev, received_at=t0 + i * step))
+            out.append(dataclasses.replace(ev, received_at=t0 + len(out) * step))
     if not out:
         raise AssertionError(f"scenario {name!r} produced no events")
     return out

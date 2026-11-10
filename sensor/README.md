@@ -39,19 +39,30 @@ docker run --rm --device /dev/ttyUSB0 -e SERIAL_PORTS=/dev/ttyUSB0 -p 8100:8100 
 ```bash
 # Print synthetic firmware lines (pipe anywhere), inject an attack after 3s:
 python -m spectre.sim.generate --band 2.4GHz --scenario deauth_flood --duration 20
+python -m spectre.sim.generate --fw v1      # the original firmware's lines instead
 
-# Normalize a real capture file to canonical events:
+# Normalize a real capture file to canonical events (--events adds lifecycle and ap_info records):
 python -m spectre.sim.replay capture.txt
+python -m spectre.sim.replay capture.txt --events
 ```
 
+The simulator speaks the v2 firmware's [line contract](../docs/data-contract.md) by default: frames
+with the radio and 802.11 keys, `ap_info` on first sighting, on change and every `ap_info_s`, a
+`channel_sweep_complete` with counters every sweep, `telemetry` and `clock_sync` every 10 s, and the
+board commands (`get_config`, `set`, `reset_config`, `reboot`) with the firmware's validation and
+error strings. Each simulated board (`SimSource.boards`) has the same `send()` contract as a serial
+board, and its `cmd_ack` comes back through the parser. A small share of frames is counted as dropped,
+so the counters are never trivially equal.
+
 Set `SPECTRE_SOURCE=sim` to drive the live pipeline from the simulator (background traffic on both
-bands + rotating `deauth_flood → evil_twin → beacon_flood → probe_flood` injections), or
+bands + rotating `deauth_flood → reconnect → evil_twin → beacon_flood → probe_flood` injections), or
 `SPECTRE_SOURCE=replay` with `REPLAY_FILE=/data/capture.txt`.
 
 ## Test
 
 ```bash
-python -m unittest discover -s tests -p "test_*.py"   # 3 tests, no pip install needed
+python scripts/run_tests.py    # whole suite, three shuffled orders, enforces the floors
+python scripts/mutate.py       # mutation catalogues in tests/mutations/
 ```
 
 ## Ingest sources

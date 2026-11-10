@@ -1,10 +1,13 @@
 """Replay a captured UART text file through the pipeline.
 
 Useful for regression testing against real-world captures: point it at a file of
-raw firmware lines (one per line) and it re-feeds them, pacing by each frame's
-``uptime_ms`` delta when available, otherwise at a fixed rate.
+raw firmware lines (one per line) and it re-feeds them, pacing by each line's
+``uptime_ms`` delta when available, otherwise at a fixed rate. Every v2 line
+kind is routed as the serial reader routes it: frames to the pipeline,
+``ap_info`` to its table, lifecycle lines to ``board_events``.
 
     python -m spectre.sim.replay capture.txt --speed 2.0
+    python -m spectre.sim.replay capture.txt --events   # lifecycle lines too
 
 Author: gurvinny
 Project: SPECTRE
@@ -81,9 +84,13 @@ def _main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Replay a SPECTRE UART capture")
     ap.add_argument("path")
     ap.add_argument("--speed", type=float, default=1.0)
+    ap.add_argument("--events", action="store_true",
+                    help="also print lifecycle and ap_info records")
     args = ap.parse_args(argv)
     # Standalone: just parse and print normalized events (no live pipeline).
-    parser = Parser("replay")
+    # With no on_ap_info, the parser hands ap_info records to on_lifecycle too.
+    show = (lambda rec: print(json.dumps(rec))) if args.events else None
+    parser = Parser("replay", on_lifecycle=show)
     with open(args.path, "r", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             ev = parser.parse_line(line.rstrip("\n"))

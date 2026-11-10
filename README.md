@@ -351,9 +351,11 @@ docker compose up -d --build
 > device. With no boards attached, comment out the `devices:` block.
 
 The simulator drives **both bands** and injects a rotating attack scenario every 45 seconds
-(`deauth_flood` → `evil_twin` → `beacon_flood` → `probe_flood`), so every detection rule fires on
-its own. It uses SSIDs `ExampleNet` / `Neighbor-24` / `GuestWiFi` / `IoT-5G` and MAC addresses from
-the RFC 7042 documentation range `00:00:5E:00:53:xx`.
+(`deauth_flood` → `reconnect` → `evil_twin` → `beacon_flood` → `probe_flood`), so every detection
+rule fires on its own (`reconnect` is a benign auth + four-way handshake). It emits the v2 firmware's
+lines, so telemetry, `ap_info` and the board commands can be exercised without hardware. It uses
+SSIDs `ExampleNet` / `Neighbor-24` / `GuestWiFi` / `IoT-5G` and MAC addresses from the RFC 7042
+documentation range `00:00:5E:00:53:xx`.
 
 > Note: `evil_twin` only fires once the impersonated SSID is on the **Known Networks** allowlist —
 > add `ExampleNet` in Settings, otherwise the rule has no baseline to compare against.
