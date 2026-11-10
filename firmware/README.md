@@ -16,6 +16,7 @@ Which of them you actually hop is up to you.
 | `spectre-sniffer/main/core/` | Portable C with no IDF dependency: 802.11 + IE decoding, line format, commands |
 | `test/` | Host test suite for `core/` (ASan + UBSan), sample-line contract check |
 | `scripts/mutate.py` | Mutation runner: proves the host tests can fail |
+| `flash.py` | Flash a board and verify its boot line against the image (tests in `sensor/tests/test_flash_tool.py`) |
 
 ## Build
 
@@ -30,12 +31,48 @@ idf.py build
 
 ## Flash
 
+Stop whatever reads the port first (the sensor, a serial monitor): two readers on one port each see
+half the lines. Then:
+
 ```bash
-idf.py -p /dev/ttyUSB0 -b 460800 flash
+python3 firmware/flash.py --port /dev/ttyUSB0 --band 2.4GHz
+python3 firmware/flash.py --port /dev/ttyUSB1 --band 5GHz
 ```
 
-A fresh board boots on the 2.4 GHz plan. To make it the 5 GHz board, send it one command (see below):
-`{"cmd":"set","band":"5GHz"}`. The choice is saved in NVS and survives reflashing the app.
+`flash.py` flashes the build in `spectre-sniffer/build/` (or `--build DIR`, e.g. the unpacked `Firmware
+build` CI artifact, whose `SHA256SUMS` it checks first) with esptool via `uvx` at 460800 baud. It then sets
+the band by command, restores that band's default plan (`--keep-config` keeps the current one), reboots the
+board by command and checks the new `boot` line against the image: firmware name, version, ELF sha256,
+band, baud and the acknowledged plan. It waits for `sniffer_started` and prints a JSON report with the
+sha256 of every image file. Any mismatch or silence exits non-zero. `--verify-only` skips the flash and
+checks a board that is already running the image. Needs Python 3.10+ and
+[uv](https://docs.astral.sh/uv/); nothing else.
+
+Plain `idf.py -p /dev/ttyUSB0 -b 460800 flash` works too. A fresh board then boots on the 2.4 GHz plan; to
+make it the 5 GHz board send `{"cmd":"set","band":"5GHz"}` (see below). The choice is saved in NVS and
+survives reflashing the app.
+
+The sensor must read at the same speed: set `SERIAL_BAUD=460800` in its `.env` before starting it again.
+
+### Before the first flash: keep a way back
+
+Read the board's whole flash once, before flashing this firmware over whatever it runs now:
+
+```bash
+uvx --from esptool==5.6.0 esptool --port /dev/ttyUSB0 --baud 460800 read-flash 0 ALL backup.bin
+```
+
+Read it twice and compare the files; keep the backup private, since NVS can hold credentials and
+the board's MAC. 921600 baud is not reliable on every USB-serial adapter; 460800 is.
+
+### Rollback
+
+```bash
+uvx --from esptool==5.6.0 esptool --port /dev/ttyUSB0 --baud 460800 write-flash 0 backup.bin
+```
+
+This restores the old application, partition table and NVS exactly as read. Then set the sensor's
+`SERIAL_BAUD` back to what the old firmware used (115200 for the original sketch) and start it again.
 
 **Opening the port must not reset the board.** Most ESP32 dev boards wire DTR/RTS to EN/IO0. The sensor
 opens the port with DTR and RTS held low; any other reader should too, or each open reboots the board and
@@ -91,7 +128,7 @@ EAPOL key information. Payloads never leave the board.
 
 | `event` | When | Content |
 |---|---|---|
-| `boot` | Once at start | `chip`, `mode`, `band`, `channels` (`"1-13"` / `"36-165"` for the defaults, else a list), `dwell_ms`, `pin`, `filter`, `dedup`, `ap_info_s`, `fw`, `ver`, `elf_sha`, `reset` reason, `baud`, `caps` |
+| `boot` | Once at start | `chip`, `mode`, `band`, `channels` (`"1-13"` / `"36-165"` for the defaults, else a list), `dwell_ms`, `pin`, `filter`, `dedup`, `ap_info_s`, `fw`, `ver`, `elf_sha` (first 16 hex chars of the ELF sha256), `reset` reason, `baud`, `caps` |
 | `sniffer_started` | After the radio is up | `ch` |
 | `channel_sweep_complete` | Each pass through the channel list | `total_pkts` (= `emitted`, as in the original firmware), `sweep_ms`, counters |
 | `telemetry` | Every 10 s | counters, `q_hwm` / `q_size` (ring buffer bytes), `heap`, `heap_min`, `temp_dc` (chip temperature, 0.1 °C), `uart_bps` |

@@ -95,5 +95,6 @@ jobs:
             firmware/spectre-sniffer/build/bootloader/bootloader.bin
             firmware/spectre-sniffer/build/partition_table/partition-table.bin
             firmware/spectre-sniffer/build/flash_args
+            firmware/spectre-sniffer/build/flasher_args.json
             firmware/spectre-sniffer/build/SHA256SUMS
           retention-days: 30
