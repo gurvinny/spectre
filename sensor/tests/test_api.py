@@ -164,6 +164,7 @@ class TestData(ApiCase):
         t = time.time()
         for i in range(3):
             self.pipe.ingest(frame(t + i * 0.01, type="DEAUTH", src=AP, bssid=AP))
+        self.pipe.flush()
         self.assertEqual([x["rule"] for x in self.client.get("/api/threats").json()
                           ["threats"]], ["deauth_flood"])
 
@@ -174,6 +175,7 @@ class TestData(ApiCase):
         rid = r.json()["id"]
         self.pipe.ingest(frame(time.time(), type="BEACON", src=ROGUE, bssid=ROGUE,
                                ssid="ExampleNet"))
+        self.pipe.flush()
         self.assertEqual([x["bssid"] for x in self.client.get("/api/threats").json()
                           ["threats"]], [ROGUE])
         self.client.delete(f"/api/known-networks/{rid}")

@@ -467,6 +467,7 @@ class TestSimBoardControl(unittest.TestCase):
             ack = r.json()["ack"]
             self.assertTrue(ack["ok"])
             self.assertEqual(ack["config"]["dwell_ms"], 400)
+            self.pipe.flush()               # the listing reads stored rows
             listed = {b["sensor_id"]: b for b in client.get("/api/boards").json()["boards"]}
             self.assertEqual(listed["sim-5GHz"]["plan"]["dwell_ms"], 400)
             self.assertEqual(listed["sim-2.4GHz"]["plan"]["dwell_ms"], 300)  # untouched

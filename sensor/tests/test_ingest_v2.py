@@ -443,6 +443,8 @@ class TestWiring(StoreCase):
 
     def test_pipeline_records_ap_info(self):
         self.pipe.record_ap_info(self.ap_rec(5.0))
+        self.assertEqual(self.store.ap_info(), [])        # written by the next flush
+        self.pipe.flush()
         self.assertEqual([r["bssid"] for r in self.store.ap_info()], ["00:00:5E:00:53:01"])
 
     def test_pipeline_ap_info_reaches_the_detection_engine(self):
@@ -465,10 +467,10 @@ class TestWiring(StoreCase):
     def test_serial_reader_routes_every_v2_line(self):
         reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)
         self.feed(reader, "\n".join([BOOT_5, AP_INFO, TELEMETRY, CLOCK, ACK_24, DEAUTH]) + "\n")
+        self.pipe.flush()
         self.assertEqual([r["bssid"] for r in self.store.ap_info()], ["00:00:5E:00:53:01"])
         self.assertEqual([r["kind"] for r in self.store.board_events()],
                          ["boot", "telemetry", "clock_sync", "cmd_ack"])
-        self.pipe._flush_frames()
         (row,) = self.rows("SELECT band, reason FROM frames")
         self.assertEqual(row, {"band": "2.4GHz", "reason": 7})
 
@@ -477,6 +479,7 @@ class TestWiring(StoreCase):
         with open(path, "w") as fh:
             fh.write(BOOT_5 + "\n" + AP_INFO + "\n")
         asyncio.run(ReplaySource(self.pipe, path, speed=100.0, loop=False).run())
+        self.pipe.flush()
         self.assertEqual(len(self.store.ap_info()), 1)
         self.assertEqual([r["kind"] for r in self.store.board_events()], ["boot"])
 
@@ -484,6 +487,7 @@ class TestWiring(StoreCase):
         src = SimSource(self.pipe)
         for parser in src._parsers.values():
             parser.parse_line(AP_INFO)
+        self.pipe.flush()
         self.assertEqual(sorted(r["sensor_id"] for r in self.store.ap_info()),
                          ["sim-2.4GHz", "sim-5GHz"])
 

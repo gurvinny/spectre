@@ -17,7 +17,7 @@ for the HTTP layer — so the pipeline can be smoke-tested without installing an
 | `spectre/models.py` | `Event` / `Threat` dataclasses + the severity ↔ syslog map. |
 | `spectre/pipeline.py` | The hot path: in-memory ring, device/AP inventory, batched writes, detection fan-out, WS broadcast, summaries, retention. |
 | `spectre/detect/` | One module per rule: `deauth_flood`, `evil_twin`, `flood`, `anomaly`. |
-| `spectre/store.py` | SQLite (WAL) — frames, `board_events`, `ap_info`, inventory, threats, summaries, config, users, sessions; retention + disk guard; additive schema migration. |
+| `spectre/store.py` | SQLite (WAL), one locked writer plus a read-only connection per thread — frames, `board_events`, `ap_info`, inventory, threats, summaries, config, users, sessions; retention + disk guard; additive schema migration. |
 | `spectre/boards.py` | Board health (firmware, radio plan, loss, UART load) from the newest lifecycle rows, and validation of console commands. |
 | `spectre/config.py` | Defaults, `.env` seeding on first run, live settings. |
 | `spectre/auth.py` | Single-admin auth: PBKDF2 password hashes, server-side session tokens. |

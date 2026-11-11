@@ -630,6 +630,7 @@ class TestSimSource(unittest.TestCase):
         self.tmp.cleanup()
 
     def kinds(self):
+        self.pipe.flush()
         return [r["kind"] for r in self.store.board_events()]
 
     def test_boards_are_the_two_sim_sensors(self):
@@ -640,6 +641,7 @@ class TestSimSource(unittest.TestCase):
         board = self.src.boards["sim-5GHz"]
         n = board.send({"cmd": "get_config", "id": "a"})
         self.assertEqual(n, len('{"cmd":"get_config","id":"a"}') + 1)
+        self.pipe.flush()
         (ack,) = [r for r in self.store.board_events() if r["kind"] == "cmd_ack"]
         self.assertEqual((ack["sensor_id"], ack["payload"]["id"], ack["payload"]["ok"]),
                          ("sim-5GHz", "a", True))
@@ -657,7 +659,7 @@ class TestSimSource(unittest.TestCase):
         self.assertEqual(self.src.boards["sim-2.4GHz"].parser.band, "5GHz")
         for _ in range(50):
             self.src.step()
-        self.pipe._flush_frames()
+        self.pipe.flush()
         rows = self.store._db.execute(
             "SELECT DISTINCT band FROM frames WHERE sensor_id = 'sim-2.4GHz'").fetchall()
         self.assertEqual([r[0] for r in rows], ["5GHz"])
@@ -668,7 +670,7 @@ class TestSimSource(unittest.TestCase):
             for _ in range(100):
                 self.src.step()
                 self.clock.advance(0.11)
-        self.pipe._flush_frames()
+        self.pipe.flush()
         evs = self.store.board_events()
         for sensor in ("sim-2.4GHz", "sim-5GHz"):
             kinds = {r["kind"] for r in evs if r["sensor_id"] == sensor}
@@ -750,7 +752,7 @@ class TestReplayV2(unittest.TestCase):
 
     def test_a_v2_capture_replays_into_every_table(self):
         asyncio.run(ReplaySource(self.pipe, self.path, speed=1000.0, loop=False).run())
-        self.pipe._flush_frames()
+        self.pipe.flush()
         kinds = {r["kind"] for r in self.store.board_events()}
         self.assertEqual(kinds, {"boot", "sniffer_started", "channel_sweep_complete",
                                  "telemetry", "clock_sync", "cmd_ack"})

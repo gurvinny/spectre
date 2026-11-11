@@ -366,11 +366,16 @@ def create_app(store: Store, config: Config, pipeline: Pipeline,
             raise HTTPException(status_code=status, detail=detail)
         log.warning("board %s: %s sent by %s", sensor_id, command["cmd"], user)
 
+        def find_ack() -> dict | None:
+            # Stored, or received and still waiting for the next ingest flush.
+            return (store.find_cmd_ack(sensor_id, command["id"], t0)
+                    or pipeline.pending_cmd_ack(sensor_id, command["id"], t0))
+
         deadline = t0 + ack_wait
-        ack = store.find_cmd_ack(sensor_id, command["id"], t0)
+        ack = find_ack()
         while ack is None and time.time() < deadline:
             time.sleep(ACK_POLL_SECONDS)
-            ack = store.find_cmd_ack(sensor_id, command["id"], t0)
+            ack = find_ack()
         return {"id": command["id"], "sent": audit["sent"], "ack": ack}
 
     # ── live feed ──────────────────────────────────────────────────────

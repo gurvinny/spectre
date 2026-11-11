@@ -85,7 +85,7 @@ class TestInventory(PipelineCase):
     def test_frames_are_buffered_then_flushed(self):
         self.pipe.ingest(frame(time.time(), type="BEACON", src=AP, bssid=AP))
         self.assertEqual(self.store.recent_frames(), [])
-        self.pipe._flush_frames()
+        self.pipe.flush()
         self.assertEqual(len(self.store.recent_frames()), 1)
 
     def test_prune_inventory_drops_stale_but_keeps_muted(self):
@@ -108,6 +108,8 @@ class TestThreats(PipelineCase):
     def test_flood_is_stored_and_forwarded_once_per_cooldown(self):
         for ev in self.now_events(sim_events("deauth_flood")):
             self.pipe.ingest(ev)
+        self.assertEqual(self.store.list_threats(), [])   # buffered with the frames
+        self.pipe.flush()
         threats = self.store.list_threats()
         self.assertEqual([(t["rule"], t["wazuh_sent"]) for t in threats],
                          [("deauth_flood", 1)])
@@ -120,6 +122,7 @@ class TestThreats(PipelineCase):
         self.pipe.refresh_known_networks()
         for ev in self.now_events(sim_events("evil_twin")):
             self.pipe.ingest(ev)
+        self.pipe.flush()
         self.assertEqual([(t["rule"], t["bssid"]) for t in self.store.list_threats()],
                          [("evil_twin", ROGUE)])
 
@@ -127,6 +130,7 @@ class TestThreats(PipelineCase):
         self.cfg.set("wazuh_enabled", False)
         for ev in self.now_events(sim_events("deauth_flood")):
             self.pipe.ingest(ev)
+        self.pipe.flush()
         self.assertEqual([t["wazuh_sent"] for t in self.store.list_threats()], [0])
 
     def test_muted_devices_reach_the_engine(self):
@@ -137,6 +141,7 @@ class TestThreats(PipelineCase):
         t = time.time()
         self.pipe.ingest(frame(t, type="PROBE_REQ", src=DEV))
         self.pipe.ingest(frame(t, type="PROBE_REQ", src="00:00:5E:00:53:11"))
+        self.pipe.flush()
         self.assertEqual([r["src"] for r in self.store.list_threats()],
                          ["00:00:5E:00:53:11"])
 

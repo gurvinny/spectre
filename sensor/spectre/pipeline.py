@@ -4,7 +4,13 @@ One :class:`Pipeline` instance owns the live in-memory state (recent-frame ring,
 device / AP inventory, rolling counters, WebSocket subscribers) and coordinates
 the periodic background tasks (frame flush, inventory flush, summary tick,
 retention prune). Reader tasks call :meth:`ingest` synchronously per frame — it
-does no awaiting, so it stays fast under the ~60 frames/sec load.
+does no awaiting, so it stays fast under load.
+
+The event loop never takes the store's write lock: everything ingest produces
+(frames, board lifecycle lines, ap_info, threats) is buffered and written in one
+transaction from a worker thread, as are the inventory, summary and prune writes.
+The serial readers share this loop, so a write waiting for the lock must never
+stall it.
 
 Author: gurvinny
 Project: SPECTRE
@@ -51,6 +57,9 @@ class Pipeline:
         # ── live in-memory state ──────────────────────────────────────
         self._recent: deque[Event] = deque(maxlen=RECENT_RING)
         self._frame_buffer: list[Event] = []          # pending DB writes
+        self._board_buffer: list[dict] = []
+        self._ap_info_buffer: list[dict] = []
+        self._threat_buffer: list[tuple[Threat, bool]] = []
         self._devices: dict[str, dict] = {}
         self._aps: dict[str, dict] = {}
         self._dirty_devices: set[str] = set()
@@ -72,6 +81,11 @@ class Pipeline:
         self.subscribers: set[asyncio.Queue] = set()
 
         self._tasks: list[asyncio.Task] = []
+        self._in_flight: set[asyncio.Future] = set()  # worker-thread writes not yet done
+        # background cadence, seconds
+        self.flush_seconds = 1.0
+        self.inventory_seconds = 3.0
+        self.prune_seconds = 300.0
         self.refresh_known_networks()
         self.refresh_muted_devices()
 
@@ -89,11 +103,22 @@ class Pipeline:
 
     # ── board lifecycle (boot, sweep counters) ─────────────────────────
     def record_board_event(self, rec: dict) -> None:
-        self.store.insert_board_event(rec)
+        self._board_buffer.append(rec)
 
     def record_ap_info(self, rec: dict) -> None:
-        self.store.insert_ap_info(rec)
+        self._ap_info_buffer.append(rec)
+        # Detection sees ap_info now, in order with the frames; only the write waits.
         self.engine.set_ap_info(rec)
+
+    def pending_cmd_ack(self, sensor_id: str, cmd_id: str, since: float) -> Optional[dict]:
+        """A ``cmd_ack`` received but not yet written, shaped like
+        :meth:`Store.find_cmd_ack`. Safe from another thread: it reads a copy."""
+        for rec in reversed(list(self._board_buffer)):
+            p = rec.get("payload") or {}
+            if (rec.get("kind") == "cmd_ack" and rec.get("sensor_id") == sensor_id
+                    and p.get("id") == cmd_id and rec.get("received_at", 0.0) >= since):
+                return dict(p, received_at=rec.get("received_at"))
+        return None
 
     # ── ingest (hot path, synchronous) ────────────────────────────────
     def ingest(self, ev: Event) -> None:
@@ -177,7 +202,7 @@ class Pipeline:
         self._threat_cooldown[t.dedupe_key] = t.ts
 
         sent = self.wazuh.send_threat(t)
-        self.store.insert_threat(t, wazuh_sent=sent)
+        self._threat_buffer.append((t, sent))
         pub = t.to_public()
         pub["wazuh_sent"] = sent
         self._threat_batch.append(pub)
@@ -199,38 +224,75 @@ class Pipeline:
         for task in self._tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        self._flush_frames()
+        # A cancelled task stops waiting, but its write keeps running in the
+        # worker thread. Let it finish first, so nothing is lost or reordered
+        # and the store is not closed underneath it.
+        if self._in_flight:
+            await asyncio.gather(*self._in_flight, return_exceptions=True)
+        self.flush()
+
+    # ── ingest writes (buffered on the loop, written off it) ──────────
+    def _take_pending(self) -> Optional[tuple]:
+        """Swap out everything waiting to be written. Runs on the loop."""
+        if not (self._frame_buffer or self._board_buffer or self._ap_info_buffer
+                or self._threat_buffer):
+            return None
+        pending = (self._frame_buffer, self._board_buffer, self._ap_info_buffer,
+                   self._threat_buffer)
+        self._frame_buffer, self._board_buffer = [], []
+        self._ap_info_buffer, self._threat_buffer = [], []
+        return pending
+
+    def _write_pending(self, pending: tuple) -> None:
+        try:
+            self.store.write_batch(*pending)
+        except Exception:  # noqa: BLE001 - never let a write kill the loop
+            log.exception("ingest flush failed")
+
+    def flush(self) -> None:
+        """Write everything pending now, on the calling thread (shutdown, tests)."""
+        pending = self._take_pending()
+        if pending:
+            self._write_pending(pending)
+
+    async def _off_loop(self, fn, *args):
+        """Run a store write in a worker thread. Shielded, so cancelling the
+        caller never cancels the write itself; stop() waits for it."""
+        fut = asyncio.ensure_future(asyncio.to_thread(fn, *args))
+        self._in_flight.add(fut)
+        fut.add_done_callback(self._in_flight.discard)
+        return await asyncio.shield(fut)
 
     async def _loop_flush_frames(self) -> None:
         while True:
-            await asyncio.sleep(1.0)
-            self._flush_frames()
-
-    def _flush_frames(self) -> None:
-        if not self._frame_buffer:
-            return
-        batch, self._frame_buffer = self._frame_buffer, []
-        try:
-            self.store.insert_frames(batch)
-        except Exception:  # noqa: BLE001 - never let a write kill the loop
-            log.exception("frame flush failed")
+            await asyncio.sleep(self.flush_seconds)
+            pending = self._take_pending()
+            if pending:
+                await self._off_loop(self._write_pending, pending)
 
     async def _loop_flush_inventory(self) -> None:
         while True:
-            await asyncio.sleep(3.0)
-            self._flush_inventory()
+            await asyncio.sleep(self.inventory_seconds)
+            devices, aps = self._take_inventory()
+            await self._off_loop(self._write_inventory, devices, aps)
+
+    def _take_inventory(self) -> tuple[list[dict], list[dict]]:
+        """Snapshot the dirty inventory rows. Runs on the loop."""
+        devices = [self._device_row(m) for m in self._dirty_devices if m in self._devices]
+        aps = [self._ap_row(b) for b in self._dirty_aps if b in self._aps]
+        self._dirty_devices.clear()
+        self._dirty_aps.clear()
+        return devices, aps
+
+    def _write_inventory(self, devices: list[dict], aps: list[dict]) -> None:
+        try:
+            self.store.upsert_devices(devices)
+            self.store.upsert_aps(aps)
+        except Exception:  # noqa: BLE001
+            log.exception("inventory flush failed")
 
     def _flush_inventory(self) -> None:
-        if self._dirty_devices:
-            rows = [self._device_row(m) for m in list(self._dirty_devices)
-                    if m in self._devices]
-            self._dirty_devices.clear()
-            self.store.upsert_devices(rows)
-        if self._dirty_aps:
-            rows = [self._ap_row(b) for b in list(self._dirty_aps)
-                    if b in self._aps]
-            self._dirty_aps.clear()
-            self.store.upsert_aps(rows)
+        self._write_inventory(*self._take_inventory())
 
     def _device_row(self, mac: str) -> dict:
         d = self._devices[mac]
@@ -266,30 +328,41 @@ class Pipeline:
             interval = int(self.cfg("summary_interval_seconds", 60))
             await asyncio.sleep(max(5, interval))
             summary = self.build_summary()
-            self.store.insert_summary(summary)
+            await self._off_loop(self.store.insert_summary, summary)
             self.wazuh.send_summary(summary)
 
     async def _loop_prune(self) -> None:
         while True:
-            await asyncio.sleep(300)  # every 5 min
+            await asyncio.sleep(self.prune_seconds)
             try:
-                report = self.store.prune(
+                report = await self._off_loop(
+                    self.store.prune,
                     float(self.cfg("raw_retention_hours", 48)),
                     float(self.cfg("disk_guard_percent", 85)))
                 if report["deleted"] or report["guard_deleted"]:
                     log.info("prune %s", report)
-                self._prune_inventory()
+                args = self._inventory_purge_args()
+                inv = await self._off_loop(self.store.prune_inventory, *args)
+                self._prune_inventory_maps(*args, inv)
             except Exception:  # noqa: BLE001
                 log.exception("prune failed")
+
+    def _inventory_purge_args(self) -> tuple[float, float, set[str]]:
+        dev_purge = float(self.cfg("device_retention_hours", 24)) * 3600
+        ap_purge = float(self.cfg("ap_retention_hours", 168)) * 3600
+        muted = {str(m).upper() for m in (self.cfg("muted_devices", []) or [])}
+        return dev_purge, ap_purge, muted
 
     def _prune_inventory(self) -> None:
         """Age out stale devices/APs from the DB and the in-memory maps so the
         inventory (and RAM) don't grow without bound as transient MACs pass by."""
-        dev_purge = float(self.cfg("device_retention_hours", 24)) * 3600
-        ap_purge = float(self.cfg("ap_retention_hours", 168)) * 3600
-        muted = {str(m).upper() for m in (self.cfg("muted_devices", []) or [])}
-        report = self.store.prune_inventory(dev_purge, ap_purge, muted)
-        # Mirror the purge in the live maps (exempt muted clients / known APs).
+        args = self._inventory_purge_args()
+        self._prune_inventory_maps(*args, self.store.prune_inventory(*args))
+
+    def _prune_inventory_maps(self, dev_purge: float, ap_purge: float,
+                              muted: set[str], report: dict) -> None:
+        """Mirror a DB purge in the live maps (muted clients and known APs are
+        exempt). Runs on the loop."""
         cut = now()
         for mac in [m for m, d in self._devices.items()
                     if cut - d["last_seen"] > dev_purge and m.upper() not in muted]:

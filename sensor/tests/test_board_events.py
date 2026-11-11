@@ -127,6 +127,8 @@ class TestWiring(StoreCase):
 
     def test_pipeline_records_board_events(self):
         self.pipe.record_board_event(self.rec(5.0, kind="boot"))
+        self.assertEqual(self.store.board_events(), [])   # written by the next flush
+        self.pipe.flush()
         self.assertEqual([r["kind"] for r in self.store.board_events()], ["boot"])
 
     def test_serial_reader_stores_lifecycle_lines(self):
@@ -140,6 +142,7 @@ class TestWiring(StoreCase):
         finally:
             os.close(r)
             os.close(w)
+        self.pipe.flush()
         rows = self.store.board_events()
         self.assertEqual([(r["sensor_id"], r["kind"]) for r in rows],
                          [("ttyUSB1", "boot"), ("ttyUSB1", "channel_sweep_complete")])
@@ -151,6 +154,7 @@ class TestWiring(StoreCase):
             fh.write(BOOT_5 + "\n" + FRAME + "\n" + SWEEP + "\n")
         src = ReplaySource(self.pipe, path, speed=100.0, loop=False)
         asyncio.run(src.run())
+        self.pipe.flush()
         self.assertEqual([r["kind"] for r in self.store.board_events()],
                          ["boot", "channel_sweep_complete"])
 
@@ -158,6 +162,7 @@ class TestWiring(StoreCase):
         src = SimSource(self.pipe)
         for band, parser in src._parsers.items():
             parser.parse_line(BOOT_5 if band == "5GHz" else BOOT_5.replace("5GHz", "2.4GHz"))
+        self.pipe.flush()
         self.assertEqual(sorted(r["sensor_id"] for r in self.store.board_events()),
                          ["sim-2.4GHz", "sim-5GHz"])
 

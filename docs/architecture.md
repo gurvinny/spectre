@@ -233,8 +233,14 @@ loop. The frontend is a pure client of that API.
 
 ## Threading model
 
-A single asyncio loop runs the readers, pipeline tasks and API. SQLite is accessed through one
-connection guarded by a lock (`check_same_thread=False`) so uvicorn worker threads and the loop can
-share it safely.
+A single asyncio loop runs the serial readers and the pipeline tasks; REST handlers run in uvicorn's
+worker threads. SQLite (WAL) has one writer connection behind a lock, and every thread reads through
+its own read-only connection, so a slow API query never waits for a write or holds one up.
+
+The event loop never takes the write lock. Everything ingest produces (frames, lifecycle lines,
+`ap_info`, threats) is buffered and written once a second in a single transaction from a worker
+thread, as are the inventory, summary and prune writes. Prune deletes and inventory upserts commit in
+chunks, so no single write holds the lock for long. A command's `cmd_ack` is visible to the API while
+it is still in the buffer, so the console never waits for the flush.
 
 _Author: gurvinny · Project: SPECTRE_

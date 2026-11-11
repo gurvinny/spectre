@@ -56,6 +56,7 @@ class TestConfig(unittest.TestCase):
         cfg = self.make()
         with cfg.store._lock:
             cfg.store._db.execute("DELETE FROM config WHERE key='deauth_threshold'")
+            cfg.store._db.commit()          # readers only see committed rows
         self.assertEqual(cfg("deauth_threshold", 999), DEFAULTS["deauth_threshold"])
 
     def test_unknown_key_uses_the_callers_default(self):

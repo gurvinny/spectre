@@ -12,7 +12,7 @@ MUTATIONS = [
      '            if True:\n',
      'test_migration_is_idempotent'),
     ('ap-info-never-pruned',
-     '            self._db.execute("DELETE FROM ap_info WHERE received_at < ?", (cutoff,))\n',
+     '        self._delete_before("ap_info", cutoff)\n',
      '',
      'test_pruned_with_the_raw_window'),
     ('hidden-ssid-stored-as-question-mark',

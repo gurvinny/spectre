@@ -4,7 +4,7 @@ TESTS = "tests/test_board_events.py"
 
 MUTATIONS = [
     ('board-events-never-pruned',
-     '            self._db.execute("DELETE FROM board_events WHERE received_at < ?", (cutoff,))\n',
+     '        self._delete_before("board_events", cutoff)\n',
      '',
      'test_prune_follows_raw_retention'),
     ('board-events-in-insert-order',

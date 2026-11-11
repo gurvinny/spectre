@@ -56,8 +56,12 @@ MUTATIONS = [
      "        while False:",
      "test_no_ack_in_time_returns_null"),
     ("ack-from-any-time",
-     '        ack = store.find_cmd_ack(sensor_id, command["id"], t0)\n        while',
-     '        ack = store.find_cmd_ack(sensor_id, command["id"], 0.0)\n        while',
+     '            return (store.find_cmd_ack(sensor_id, command["id"], t0)\n',
+     '            return (store.find_cmd_ack(sensor_id, command["id"], 0.0)\n',
      "test_an_older_ack_with_a_reused_id_is_not_this_answer"),
+    ("pending-ack-ignored",
+     'or pipeline.pending_cmd_ack(sensor_id, command["id"], t0))',
+     'or None)',
+     "test_api_round_trip_against_the_simulator"),
 ]
 SURVIVORS = {}

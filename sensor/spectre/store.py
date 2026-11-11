@@ -2,8 +2,11 @@
 
 Design goals given ~50-60 frames/sec:
 
-* **Batched frame writes** — the pipeline buffers frames and calls
-  :meth:`insert_frames` on a timer (``executemany``), never one INSERT/frame.
+* **Batched ingest writes** — the pipeline buffers frames, board lifecycle
+  lines, ap_info and threats and calls :meth:`write_batch` on a timer from a
+  worker thread, one transaction per flush, never one INSERT per frame.
+* **Reads never wait for writes** — one locked writer connection, plus a
+  read-only connection per thread for every read (see :class:`Store`).
 * **Rolling retention** — raw ``frames`` are pruned to a time window; the
   device / AP inventory, threats and summaries are kept long-term.
 * **Disk guard** — if the data partition crosses a usage threshold, the raw
@@ -25,11 +28,17 @@ import shutil
 import sqlite3
 import threading
 import time
+import urllib.parse
 from typing import Any, Iterable, Optional
 
 from .models import FRAME_COLUMNS, Event, Threat, SEVERITY
 
 log = logging.getLogger(__name__)
+
+# Rows per write-lock hold when pruning or upserting, so a big batch never holds
+# the lock long enough to keep the ingest flush waiting.
+PRUNE_CHUNK = 5000
+UPSERT_CHUNK = 500
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS frames (
@@ -245,13 +254,19 @@ def _fts_match(query: str) -> str:
 
 
 class Store:
-    """Thread-safe SQLite wrapper. A single connection guarded by a lock."""
+    """Thread-safe SQLite wrapper.
+
+    One writer connection, guarded by ``_lock``, takes every write. Reads go
+    through a read-only connection per thread (:meth:`_read`) and never take the
+    lock: in WAL mode they read the last committed state while a write is in
+    progress, so a slow API query cannot hold up ingest.
+    """
 
     def __init__(self, path: str) -> None:
         self.path = path
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        # check_same_thread=False: the asyncio loop and the uvicorn worker may
-        # touch the connection from different threads; the lock serializes them.
+        # check_same_thread=False: the writer is used from the asyncio loop and
+        # from worker threads; the lock serializes them.
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._lock = threading.Lock()
@@ -262,11 +277,32 @@ class Store:
             self._db.executescript(_SCHEMA)
             self._migrate()
             self._db.commit()
+        self._local = threading.local()
+        self._readers: list[tuple[threading.Thread, sqlite3.Connection]] = []
+        self._readers_lock = threading.Lock()
         # Full-text search index (FTS5). Created separately so a SQLite build
         # without FTS5 degrades to a LIKE fallback rather than failing startup.
         self._fts = self._init_fts()
         if self._fts:
             self._reindex_all()
+
+    def _read(self) -> sqlite3.Connection:
+        """This thread's read-only connection, opened on first use."""
+        db = getattr(self._local, "db", None)
+        if db is None:
+            uri = "file:" + urllib.parse.quote(os.path.abspath(self.path)) + "?mode=ro"
+            # check_same_thread=False only so another thread can close it.
+            db = sqlite3.connect(uri, uri=True, check_same_thread=False, timeout=5.0)
+            db.row_factory = sqlite3.Row
+            self._local.db = db
+            with self._readers_lock:
+                # Worker threads come and go (an idle pool thread exits); close
+                # what dead threads left behind so connections never pile up.
+                for owner, old in [r for r in self._readers if not r[0].is_alive()]:
+                    old.close()
+                self._readers = [r for r in self._readers if r[0].is_alive()]
+                self._readers.append((threading.current_thread(), db))
+        return db
 
     def _migrate(self) -> None:
         """Bring an older database up to the current schema. Idempotent.
@@ -303,49 +339,50 @@ class Store:
         if clauses:
             q += " WHERE " + " AND ".join(clauses)
         q += " ORDER BY id DESC LIMIT ?"; args.append(limit)
-        with self._lock:
-            rows = self._db.execute(q, args).fetchall()
+        rows = self._read().execute(q, args).fetchall()
         return [dict(r) for r in rows]
 
     # ── Inventory upserts (batched from the pipeline's dirty maps) ─────
     def upsert_devices(self, devices: list[dict]) -> None:
         if not devices:
             return
-        with self._lock:
-            for d in devices:
-                self._db.execute(
-                    "INSERT INTO devices(mac,first_seen,last_seen,bands,last_rssi,"
-                    "min_rssi,max_rssi,frames,is_random,last_ssid) "
-                    "VALUES(:mac,:first_seen,:last_seen,:bands,:last_rssi,"
-                    ":min_rssi,:max_rssi,:frames,:is_random,:last_ssid) "
-                    "ON CONFLICT(mac) DO UPDATE SET "
-                    "last_seen=excluded.last_seen, bands=excluded.bands, "
-                    "last_rssi=excluded.last_rssi, "
-                    "min_rssi=MIN(devices.min_rssi,excluded.min_rssi), "
-                    "max_rssi=MAX(devices.max_rssi,excluded.max_rssi), "
-                    "frames=excluded.frames, last_ssid=excluded.last_ssid", d)
-                if self._fts:
-                    self._fts_put("device", d["mac"], _device_index(d))
-            self._db.commit()
+        for i in range(0, len(devices), UPSERT_CHUNK):
+            with self._lock:
+                for d in devices[i:i + UPSERT_CHUNK]:
+                    self._db.execute(
+                        "INSERT INTO devices(mac,first_seen,last_seen,bands,last_rssi,"
+                        "min_rssi,max_rssi,frames,is_random,last_ssid) "
+                        "VALUES(:mac,:first_seen,:last_seen,:bands,:last_rssi,"
+                        ":min_rssi,:max_rssi,:frames,:is_random,:last_ssid) "
+                        "ON CONFLICT(mac) DO UPDATE SET "
+                        "last_seen=excluded.last_seen, bands=excluded.bands, "
+                        "last_rssi=excluded.last_rssi, "
+                        "min_rssi=MIN(devices.min_rssi,excluded.min_rssi), "
+                        "max_rssi=MAX(devices.max_rssi,excluded.max_rssi), "
+                        "frames=excluded.frames, last_ssid=excluded.last_ssid", d)
+                    if self._fts:
+                        self._fts_put("device", d["mac"], _device_index(d))
+                self._db.commit()
 
     def upsert_aps(self, aps: list[dict]) -> None:
         if not aps:
             return
-        with self._lock:
-            for a in aps:
-                self._db.execute(
-                    "INSERT INTO access_points(bssid,ssid,band,channels,first_seen,"
-                    "last_seen,last_rssi,beacons,is_known) "
-                    "VALUES(:bssid,:ssid,:band,:channels,:first_seen,:last_seen,"
-                    ":last_rssi,:beacons,:is_known) "
-                    "ON CONFLICT(bssid) DO UPDATE SET "
-                    "ssid=excluded.ssid, band=excluded.band, "
-                    "channels=excluded.channels, last_seen=excluded.last_seen, "
-                    "last_rssi=excluded.last_rssi, beacons=excluded.beacons, "
-                    "is_known=excluded.is_known", a)
-                if self._fts:
-                    self._fts_put("ap", a["bssid"], _ap_index(a))
-            self._db.commit()
+        for i in range(0, len(aps), UPSERT_CHUNK):
+            with self._lock:
+                for a in aps[i:i + UPSERT_CHUNK]:
+                    self._db.execute(
+                        "INSERT INTO access_points(bssid,ssid,band,channels,first_seen,"
+                        "last_seen,last_rssi,beacons,is_known) "
+                        "VALUES(:bssid,:ssid,:band,:channels,:first_seen,:last_seen,"
+                        ":last_rssi,:beacons,:is_known) "
+                        "ON CONFLICT(bssid) DO UPDATE SET "
+                        "ssid=excluded.ssid, band=excluded.band, "
+                        "channels=excluded.channels, last_seen=excluded.last_seen, "
+                        "last_rssi=excluded.last_rssi, beacons=excluded.beacons, "
+                        "is_known=excluded.is_known", a)
+                    if self._fts:
+                        self._fts_put("ap", a["bssid"], _ap_index(a))
+                self._db.commit()
 
     def list_devices(self, limit: int = 500, since: Optional[float] = None,
                      until: Optional[float] = None) -> list[dict]:
@@ -368,29 +405,32 @@ class Store:
         if clauses:
             q += " WHERE " + " AND ".join(clauses)
         q += " ORDER BY last_seen DESC LIMIT ?"; args.append(limit)
-        with self._lock:
-            rows = self._db.execute(q, args).fetchall()
+        rows = self._read().execute(q, args).fetchall()
         return [dict(r) for r in rows]
 
     # ── Threats ────────────────────────────────────────────────────────
     def insert_threat(self, t: Threat, wazuh_sent: bool = False) -> int:
-        rank = SEVERITY.get(t.severity, (9, 7))[0]
         with self._lock:
-            cur = self._db.execute(
-                "INSERT INTO threats(ts,rule,severity,rank,title,band,bssid,ssid,"
-                "src,detail,wazuh_sent) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (t.ts, t.rule, t.severity, rank, t.title, t.band, t.bssid,
-                 t.ssid, t.src, json.dumps(t.detail), int(wazuh_sent)))
-            if self._fts:
-                self._fts_put("threat", str(cur.lastrowid), _threat_index(
-                    t.title, t.rule, t.severity, t.band, t.bssid, t.ssid, t.src))
+            row_id = self._insert_threat(t, wazuh_sent)
             self._db.commit()
-            return cur.lastrowid
+            return row_id
+
+    def _insert_threat(self, t: Threat, wazuh_sent: bool) -> int:
+        """Caller holds the lock and commits."""
+        rank = SEVERITY.get(t.severity, (9, 7))[0]
+        cur = self._db.execute(
+            "INSERT INTO threats(ts,rule,severity,rank,title,band,bssid,ssid,"
+            "src,detail,wazuh_sent) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (t.ts, t.rule, t.severity, rank, t.title, t.band, t.bssid,
+             t.ssid, t.src, json.dumps(t.detail), int(wazuh_sent)))
+        if self._fts:
+            self._fts_put("threat", str(cur.lastrowid), _threat_index(
+                t.title, t.rule, t.severity, t.band, t.bssid, t.ssid, t.src))
+        return cur.lastrowid
 
     def list_threats(self, limit: int = 200) -> list[dict]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM threats ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+        rows = self._read().execute(
+            "SELECT * FROM threats ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
         out = []
         for r in rows:
             d = dict(r)
@@ -399,9 +439,8 @@ class Store:
         return out
 
     def count_threats_since(self, since: float) -> int:
-        with self._lock:
-            row = self._db.execute(
-                "SELECT COUNT(*) c FROM threats WHERE ts>=?", (since,)).fetchone()
+        row = self._read().execute(
+            "SELECT COUNT(*) c FROM threats WHERE ts>=?", (since,)).fetchone()
         return int(row["c"])
 
     # ── Summaries ──────────────────────────────────────────────────────
@@ -412,78 +451,100 @@ class Store:
             self._db.commit()
 
     def recent_summaries(self, limit: int = 120) -> list[dict]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT payload FROM summaries ORDER BY ts DESC LIMIT ?",
-                (limit,)).fetchall()
+        rows = self._read().execute(
+            "SELECT payload FROM summaries ORDER BY ts DESC LIMIT ?",
+            (limit,)).fetchall()
         return [json.loads(r["payload"]) for r in rows][::-1]
 
     # ── Board lifecycle events ─────────────────────────────────────────
     def insert_board_event(self, rec: dict) -> None:
         with self._lock:
-            self._db.execute(
-                "INSERT INTO board_events(received_at,sensor_id,band,kind,payload)"
-                " VALUES(?,?,?,?,?)",
-                (rec.get("received_at", time.time()), rec.get("sensor_id"),
-                 rec.get("band"), rec.get("kind"), json.dumps(rec.get("payload") or {})))
+            self._insert_board_event(rec)
             self._db.commit()
 
+    def _insert_board_event(self, rec: dict) -> None:
+        """Caller holds the lock and commits."""
+        self._db.execute(
+            "INSERT INTO board_events(received_at,sensor_id,band,kind,payload)"
+            " VALUES(?,?,?,?,?)",
+            (rec.get("received_at", time.time()), rec.get("sensor_id"),
+             rec.get("band"), rec.get("kind"), json.dumps(rec.get("payload") or {})))
+
     def board_events(self, since: float = 0.0, limit: int = 10000) -> list[dict]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT received_at,sensor_id,band,kind,payload FROM board_events"
-                " WHERE received_at>=? ORDER BY received_at LIMIT ?",
-                (since, limit)).fetchall()
+        rows = self._read().execute(
+            "SELECT received_at,sensor_id,band,kind,payload FROM board_events"
+            " WHERE received_at>=? ORDER BY received_at LIMIT ?",
+            (since, limit)).fetchall()
         return [{"received_at": r["received_at"], "sensor_id": r["sensor_id"],
                  "band": r["band"], "kind": r["kind"],
                  "payload": json.loads(r["payload"] or "{}")} for r in rows]
 
     def latest_board_events(self) -> list[dict]:
         """The newest row of each kind for each board."""
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT b.received_at,b.sensor_id,b.band,b.kind,b.payload FROM board_events b"
-                " JOIN (SELECT MAX(id) AS id FROM board_events GROUP BY sensor_id, kind) m"
-                " ON b.id = m.id ORDER BY b.sensor_id, b.kind").fetchall()
+        rows = self._read().execute(
+            "SELECT b.received_at,b.sensor_id,b.band,b.kind,b.payload FROM board_events b"
+            " JOIN (SELECT MAX(id) AS id FROM board_events GROUP BY sensor_id, kind) m"
+            " ON b.id = m.id ORDER BY b.sensor_id, b.kind").fetchall()
         return [{"received_at": r["received_at"], "sensor_id": r["sensor_id"],
                  "band": r["band"], "kind": r["kind"],
                  "payload": json.loads(r["payload"] or "{}")} for r in rows]
 
     def find_cmd_ack(self, sensor_id: str, cmd_id: str, since: float) -> Optional[dict]:
         """The newest ``cmd_ack`` from *sensor_id* echoing *cmd_id*, at or after *since*."""
-        with self._lock:
-            r = self._db.execute(
-                "SELECT received_at,payload FROM board_events WHERE sensor_id=?"
-                " AND kind='cmd_ack' AND received_at>=? AND json_extract(payload,'$.id')=?"
-                " ORDER BY id DESC LIMIT 1", (sensor_id, since, cmd_id)).fetchone()
+        r = self._read().execute(
+            "SELECT received_at,payload FROM board_events WHERE sensor_id=?"
+            " AND kind='cmd_ack' AND received_at>=? AND json_extract(payload,'$.id')=?"
+            " ORDER BY id DESC LIMIT 1", (sensor_id, since, cmd_id)).fetchone()
         if r is None:
             return None
         return dict(json.loads(r["payload"] or "{}"), received_at=r["received_at"])
 
     # ── AP security / capability lines (v2 firmware) ───────────────────
     def insert_ap_info(self, rec: dict) -> None:
+        with self._lock:
+            self._insert_ap_info(rec)
+            self._db.commit()
+
+    def _insert_ap_info(self, rec: dict) -> None:
+        """Caller holds the lock and commits."""
         p = rec.get("payload") or {}
         bssid = _str_or_none(p.get("bssid"))
         ssid = _str_or_none(p.get("ssid"))
+        self._db.execute(
+            "INSERT INTO ap_info(received_at,sensor_id,band,bssid,why,ch,ds_ch,"
+            "ssid,sec,pmf,wpa1,ht,vht,he,eht,wps,hash,payload)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rec.get("received_at", time.time()), rec.get("sensor_id"),
+             rec.get("band"), bssid.upper() if bssid else None,
+             _str_or_none(p.get("why")), _int_or_none(p.get("ch")),
+             _int_or_none(p.get("ds_ch")), None if ssid == "?" else ssid,
+             _str_or_none(p.get("sec")), _str_or_none(p.get("pmf")),
+             *(_flag(p.get(k)) for k in _AP_INFO_BOOLS),
+             _str_or_none(p.get("hash")), json.dumps(p)))
+
+    def write_batch(self, frames: Iterable[Event] = (), board_events: Iterable[dict] = (),
+                    ap_infos: Iterable[dict] = (),
+                    threats: Iterable[tuple[Threat, bool]] = ()) -> None:
+        """Write one ingest flush in a single transaction, in arrival order per table."""
+        rows = [e.to_row() for e in frames]
+        board_events, ap_infos, threats = list(board_events), list(ap_infos), list(threats)
+        if not (rows or board_events or ap_infos or threats):
+            return
         with self._lock:
-            self._db.execute(
-                "INSERT INTO ap_info(received_at,sensor_id,band,bssid,why,ch,ds_ch,"
-                "ssid,sec,pmf,wpa1,ht,vht,he,eht,wps,hash,payload)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (rec.get("received_at", time.time()), rec.get("sensor_id"),
-                 rec.get("band"), bssid.upper() if bssid else None,
-                 _str_or_none(p.get("why")), _int_or_none(p.get("ch")),
-                 _int_or_none(p.get("ds_ch")), None if ssid == "?" else ssid,
-                 _str_or_none(p.get("sec")), _str_or_none(p.get("pmf")),
-                 *(_flag(p.get(k)) for k in _AP_INFO_BOOLS),
-                 _str_or_none(p.get("hash")), json.dumps(p)))
+            if rows:
+                self._db.executemany(_INSERT_FRAME, rows)
+            for rec in board_events:
+                self._insert_board_event(rec)
+            for rec in ap_infos:
+                self._insert_ap_info(rec)
+            for t, sent in threats:
+                self._insert_threat(t, sent)
             self._db.commit()
 
     def ap_info(self, since: float = 0.0, limit: int = 10000) -> list[dict]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM ap_info WHERE received_at>=?"
-                " ORDER BY received_at LIMIT ?", (since, limit)).fetchall()
+        rows = self._read().execute(
+            "SELECT * FROM ap_info WHERE received_at>=?"
+            " ORDER BY received_at LIMIT ?", (since, limit)).fetchall()
         out = []
         for r in rows:
             d = dict(r)
@@ -494,9 +555,8 @@ class Store:
 
     # ── Known networks (evil-twin allowlist) ──────────────────────────
     def list_known_networks(self) -> list[dict]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM known_networks ORDER BY id").fetchall()
+        rows = self._read().execute(
+            "SELECT * FROM known_networks ORDER BY id").fetchall()
         return [dict(r) for r in rows]
 
     def add_known_network(self, ssid: str, bssid: Optional[str],
@@ -534,9 +594,8 @@ class Store:
 
     # ── Config (key/value, JSON-encoded) ───────────────────────────────
     def get_config(self, key: str, default: Any = None) -> Any:
-        with self._lock:
-            row = self._db.execute(
-                "SELECT value FROM config WHERE key=?", (key,)).fetchone()
+        row = self._read().execute(
+            "SELECT value FROM config WHERE key=?", (key,)).fetchone()
         if row is None:
             return default
         try:
@@ -553,8 +612,7 @@ class Store:
             self._db.commit()
 
     def all_config(self) -> dict:
-        with self._lock:
-            rows = self._db.execute("SELECT key,value FROM config").fetchall()
+        rows = self._read().execute("SELECT key,value FROM config").fetchall()
         out = {}
         for r in rows:
             try:
@@ -565,9 +623,8 @@ class Store:
 
     # ── Users / sessions ───────────────────────────────────────────────
     def get_user(self, username: str) -> Optional[dict]:
-        with self._lock:
-            row = self._db.execute(
-                "SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        row = self._read().execute(
+            "SELECT * FROM users WHERE username=?", (username,)).fetchone()
         return dict(row) if row else None
 
     def upsert_user(self, username: str, pwd_hash: str, salt: str) -> None:
@@ -580,8 +637,7 @@ class Store:
             self._db.commit()
 
     def has_users(self) -> bool:
-        with self._lock:
-            row = self._db.execute("SELECT COUNT(*) c FROM users").fetchone()
+        row = self._read().execute("SELECT COUNT(*) c FROM users").fetchone()
         return int(row["c"]) > 0
 
     def create_session(self, token: str, username: str, ttl_seconds: int) -> None:
@@ -593,9 +649,8 @@ class Store:
             self._db.commit()
 
     def get_session(self, token: str) -> Optional[dict]:
-        with self._lock:
-            row = self._db.execute(
-                "SELECT * FROM sessions WHERE token=?", (token,)).fetchone()
+        row = self._read().execute(
+            "SELECT * FROM sessions WHERE token=?", (token,)).fetchone()
         if not row:
             return None
         if row["expires_at"] < time.time():
@@ -668,11 +723,10 @@ class Store:
             match = _fts_match(query)
             if match:
                 try:
-                    with self._lock:
-                        rows = self._db.execute(
-                            "SELECT kind,ref,label,sub,band FROM search_fts "
-                            "WHERE search_fts MATCH ? ORDER BY rank LIMIT ?",
-                            (match, limit)).fetchall()
+                    rows = self._read().execute(
+                        "SELECT kind,ref,label,sub,band FROM search_fts "
+                        "WHERE search_fts MATCH ? ORDER BY rank LIMIT ?",
+                        (match, limit)).fetchall()
                     return [dict(r) for r in rows]
                 except sqlite3.Error:
                     log.exception("FTS search failed — using LIKE fallback")
@@ -681,21 +735,20 @@ class Store:
     def _search_like(self, query: str, limit: int) -> list[dict]:
         like = "%" + query.replace("%", "").replace("_", "") + "%"
         out: list[dict] = []
-        with self._lock:
-            for r in self._db.execute(
-                    "SELECT mac,last_ssid,bands FROM devices "
-                    "WHERE mac LIKE ? OR last_ssid LIKE ? "
-                    "ORDER BY last_seen DESC LIMIT ?", (like, like, limit)):
-                out.append({"kind": "device", "ref": r["mac"],
-                            "label": r["last_ssid"] or r["mac"], "sub": r["mac"],
-                            "band": r["bands"]})
-            for r in self._db.execute(
-                    "SELECT bssid,ssid,band FROM access_points "
-                    "WHERE bssid LIKE ? OR ssid LIKE ? "
-                    "ORDER BY last_seen DESC LIMIT ?", (like, like, limit)):
-                out.append({"kind": "ap", "ref": r["bssid"],
-                            "label": r["ssid"] or r["bssid"], "sub": r["bssid"],
-                            "band": r["band"]})
+        for r in self._read().execute(
+                "SELECT mac,last_ssid,bands FROM devices "
+                "WHERE mac LIKE ? OR last_ssid LIKE ? "
+                "ORDER BY last_seen DESC LIMIT ?", (like, like, limit)):
+            out.append({"kind": "device", "ref": r["mac"],
+                        "label": r["last_ssid"] or r["mac"], "sub": r["mac"],
+                        "band": r["bands"]})
+        for r in self._read().execute(
+                "SELECT bssid,ssid,band FROM access_points "
+                "WHERE bssid LIKE ? OR ssid LIKE ? "
+                "ORDER BY last_seen DESC LIMIT ?", (like, like, limit)):
+            out.append({"kind": "ap", "ref": r["bssid"],
+                        "label": r["ssid"] or r["bssid"], "sub": r["bssid"],
+                        "band": r["band"]})
         return out[:limit]
 
     def prune_inventory(self, device_purge_seconds: float, ap_purge_seconds: float,
@@ -758,12 +811,23 @@ class Store:
                 "disk_used_pct": round(used_pct, 1), "window_hours": window_h}
 
     def _delete_frames_before(self, cutoff: float) -> int:
-        with self._lock:
-            cur = self._db.execute("DELETE FROM frames WHERE received_at < ?", (cutoff,))
-            self._db.execute("DELETE FROM board_events WHERE received_at < ?", (cutoff,))
-            self._db.execute("DELETE FROM ap_info WHERE received_at < ?", (cutoff,))
-            self._db.commit()
-            return cur.rowcount
+        self._delete_before("board_events", cutoff)
+        self._delete_before("ap_info", cutoff)
+        return self._delete_before("frames", cutoff)
+
+    def _delete_before(self, table: str, cutoff: float) -> int:
+        """Delete rows older than *cutoff*, PRUNE_CHUNK rows per lock hold."""
+        total = 0
+        while True:
+            with self._lock:
+                n = self._db.execute(
+                    f"DELETE FROM {table} WHERE id IN (SELECT id FROM {table}"
+                    " WHERE received_at < ? LIMIT ?)",
+                    (cutoff, PRUNE_CHUNK)).rowcount
+                self._db.commit()
+            total += n
+            if n < PRUNE_CHUNK:
+                return total
 
     def _disk_used_percent(self) -> float:
         try:
@@ -773,5 +837,9 @@ class Store:
             return 0.0
 
     def close(self) -> None:
+        with self._readers_lock:
+            for _, db in self._readers:
+                db.close()
+            self._readers.clear()
         with self._lock:
             self._db.close()
