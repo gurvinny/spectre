@@ -8,7 +8,7 @@ import unittest
 from _support import TempDir, UdpSink, frame, sim_events
 
 from spectre.config import Config
-from spectre.pipeline import Pipeline
+from spectre.pipeline import SUBSCRIBER_QUEUE_CAP, Pipeline
 from spectre.store import Store
 
 AP = "00:00:5E:00:53:01"
@@ -178,6 +178,27 @@ class TestViewsAndStream(PipelineCase):
         self.assertEqual(msg["type"], "batch")
         self.assertEqual(len(msg["frames"]), 40)
         self.assertEqual([t["rule"] for t in msg["threats"]], ["deauth_flood"])
+
+    def test_a_full_subscriber_queue_drops_its_oldest_batch(self):
+        q = self.pipe.subscribe()
+        for i in range(SUBSCRIBER_QUEUE_CAP):
+            self.pipe._publish({"n": i})
+        self.assertTrue(q.full())
+        self.pipe._publish({"n": "newest"})
+        held = [q.get_nowait()["n"] for _ in range(q.qsize())]
+        self.assertEqual(len(held), SUBSCRIBER_QUEUE_CAP)        # memory stays bounded
+        self.assertEqual(held[0], 1)                              # batch 0 was discarded
+        self.assertEqual(held[-1], "newest")                      # the client stays current
+        self.assertEqual(self.pipe.overview()["ws_dropped"], 1)
+
+    def test_a_slow_subscriber_does_not_cost_a_fast_one_anything(self):
+        slow, fast = self.pipe.subscribe(), self.pipe.subscribe()
+        for i in range(SUBSCRIBER_QUEUE_CAP + 5):
+            self.pipe._publish({"n": i})
+            fast.get_nowait()
+        self.assertTrue(fast.empty())
+        self.assertEqual(slow.get_nowait()["n"], 5)
+        self.assertEqual(self.pipe.overview()["ws_dropped"], 5)
 
     def test_no_subscribers_means_batches_are_dropped(self):
         async def run():

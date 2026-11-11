@@ -46,5 +46,17 @@ MUTATIONS = [
     ("feed-batch-leaks-without-subscribers",
      "                self._feed_batch.clear()\n", "",
      "test_no_subscribers_means_batches_are_dropped"),
+    ("ws-drops-newest",
+     "            if q.full():\n                with contextlib.suppress(asyncio.QueueEmpty):\n"
+     "                    q.get_nowait()\n                self.ws_dropped += 1\n            q.put_nowait(msg)\n",
+     "            if q.full():\n                self.ws_dropped += 1\n                continue\n"
+     "            q.put_nowait(msg)\n",
+     "test_a_full_subscriber_queue_drops_its_oldest_batch"),
+    ("ws-queue-unbounded",
+     "asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_CAP)", "asyncio.Queue()",
+     "test_a_full_subscriber_queue_drops_its_oldest_batch"),
+    ("ws-drops-not-counted",
+     "                self.ws_dropped += 1\n", "",
+     "test_a_full_subscriber_queue_drops_its_oldest_batch"),
 ]
 SURVIVORS = {}

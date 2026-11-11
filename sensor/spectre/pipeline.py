@@ -79,6 +79,7 @@ class Pipeline:
         self._feed_batch: list[dict] = []
         self._threat_batch: list[dict] = []
         self.subscribers: set[asyncio.Queue] = set()
+        self.ws_dropped = 0                           # batches discarded for slow clients
 
         self._tasks: list[asyncio.Task] = []
         self._in_flight: set[asyncio.Future] = set()  # worker-thread writes not yet done
@@ -314,14 +315,19 @@ class Pipeline:
             threats, self._threat_batch = self._threat_batch, []
             if not frames and not threats:
                 continue
-            msg = {"type": "batch", "frames": frames, "threats": threats,
-                   "fps": self.fps()}
-            for q in list(self.subscribers):
-                try:
-                    q.put_nowait(msg)
-                except asyncio.QueueFull:
-                    # Slow consumer — drop the frame; it will catch up on the next tick.
-                    pass
+            self._publish({"type": "batch", "frames": frames, "threats": threats,
+                           "fps": self.fps()})
+
+    def _publish(self, msg: dict) -> None:
+        """Queue *msg* for every subscriber. A full queue (a slow link, a throttled
+        background tab) drops its OLDEST batch, so the client stays current and
+        memory stays bounded at SUBSCRIBER_QUEUE_CAP per client. Runs on the loop."""
+        for q in list(self.subscribers):
+            if q.full():
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    q.get_nowait()
+                self.ws_dropped += 1
+            q.put_nowait(msg)
 
     async def _loop_summary(self) -> None:
         while True:
@@ -449,4 +455,5 @@ class Pipeline:
                             sorted(talkers.items(), key=lambda kv: kv[1],
                                    reverse=True)[:10]],
             "wazuh": self.wazuh.status(),
+            "ws_dropped": self.ws_dropped,
         }

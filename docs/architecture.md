@@ -243,4 +243,9 @@ thread, as are the inventory, summary and prune writes. Prune deletes and invent
 chunks, so no single write holds the lock for long. A command's `cmd_ack` is visible to the API while
 it is still in the buffer, so the console never waits for the flush.
 
+Each WebSocket client gets its own queue of at most 50 batches. A client that drains slower than the
+250 ms broadcast (a slow link, a throttled background tab) loses its **oldest** batch, so it stays
+current, its memory stays bounded, and other clients and ingest are unaffected. `GET /api/overview`
+reports the running total as `ws_dropped`.
+
 _Author: gurvinny · Project: SPECTRE_
