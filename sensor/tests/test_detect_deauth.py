@@ -10,8 +10,11 @@ AP2 = "00:00:5E:00:53:02"
 VICTIM = "00:00:5E:00:53:10"
 
 
-def deauth(ts, bssid=AP, kind="DEAUTH"):
-    return frame(ts, type=kind, ch=6, rssi=-50, src=bssid, dst=VICTIM, bssid=bssid)
+def deauth(ts, bssid=AP, kind="DEAUTH", **v2):
+    return frame(ts, type=kind, ch=6, rssi=-50, src=bssid, dst=VICTIM, bssid=bssid, **v2)
+
+
+RETRY, PROTECTED = 0x08, 0x40
 
 
 class TestDeauthFlood(unittest.TestCase):
@@ -82,3 +85,73 @@ class TestDeauthFlood(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDeauthRetransmissions(unittest.TestCase):
+    """An AP retransmits one unacknowledged frame many times: same sn, Retry set."""
+
+    def setUp(self):
+        self.cfg = make_cfg(deauth_window_seconds=10, deauth_threshold=20)
+        self.rule = DeauthFlood(self.cfg)
+
+    def feed(self, events):
+        out = []
+        for ev in events:
+            out.extend(self.rule.process(ev))
+        return out
+
+    def test_retransmissions_of_one_frame_count_once(self):
+        evs = [deauth(100, sn=1475, fl=0)]
+        evs += [deauth(100 + i * 0.005, sn=1475, fl=RETRY) for i in range(1, 31)]
+        self.assertEqual(self.feed(evs), [])
+
+    def test_distinct_frames_still_count(self):
+        evs = [deauth(100 + i * 0.1, sn=i, fl=0) for i in range(20)]
+        self.assertEqual(len(self.feed(evs)), 1)
+
+    def test_retry_with_a_new_sequence_number_counts(self):
+        # Retry bit alone is not a duplicate: the receiver acts on a new sn.
+        evs = [deauth(100 + i * 0.1, sn=i, fl=RETRY) for i in range(20)]
+        self.assertEqual(len(self.feed(evs)), 1)
+
+    def test_same_sequence_number_without_retry_counts(self):
+        # Only a Retry-flagged repeat is a duplicate to the receiver.
+        evs = [deauth(100 + i * 0.1, sn=7, fl=0) for i in range(20)]
+        self.assertEqual(len(self.feed(evs)), 1)
+
+    def test_duplicate_is_judged_per_source_and_destination(self):
+        # Same sn from the AP to two different stations: two distinct frames.
+        other = "00:00:5E:00:53:11"
+        evs = []
+        for i in range(10):
+            evs.append(deauth(100 + i * 0.1, sn=i, fl=RETRY))
+            evs.append(frame(100 + i * 0.1 + 0.01, type="DEAUTH", ch=6, rssi=-50, src=AP,
+                             dst=other, bssid=AP, sn=i, fl=RETRY))
+        self.assertEqual(len(self.feed(evs)), 1)
+
+    def test_constant_sequence_retry_flood_counts_once(self):
+        # Crafted Retry + constant sn: the victim discards all but the first,
+        # so it is not a flood, and the rule counts it once.
+        evs = [deauth(100 + i * 0.01, sn=0, fl=RETRY) for i in range(200)]
+        self.assertEqual(self.feed(evs), [])
+        later = [deauth(101 + i * 0.1, sn=1 + i, fl=0) for i in range(19)]
+        self.assertEqual(len(self.feed(later)), 1)
+
+    def test_protected_frames_do_not_count(self):
+        evs = [deauth(100 + i * 0.1, sn=i, fl=PROTECTED) for i in range(40)]
+        self.assertEqual(self.feed(evs), [])
+
+    def test_protected_frames_leave_the_unprotected_count_alone(self):
+        evs = [deauth(100 + i * 0.05, sn=i, fl=PROTECTED) for i in range(30)]
+        evs += [deauth(102 + i * 0.1, sn=100 + i, fl=0) for i in range(19)]
+        self.assertEqual(self.feed(evs), [])
+        self.assertEqual(len(self.feed([deauth(104, sn=200, fl=0)])), 1)
+
+    def test_v1_frames_without_sequence_fields_count_as_before(self):
+        self.assertEqual(len(self.feed(deauth(100 + i * 0.1) for i in range(20))), 1)
+
+    def test_simulated_flood_with_retries_still_fires(self):
+        evs = sim_events("deauth_flood")
+        self.assertTrue(any((e.fc_flags or 0) & RETRY for e in evs),
+                        "scenario should carry some Retry-flagged frames")
+        self.assertTrue(self.feed(evs))
