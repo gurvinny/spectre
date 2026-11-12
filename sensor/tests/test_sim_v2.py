@@ -392,7 +392,7 @@ class TestTicks(unittest.TestCase):
         # every byte on the wire since the last snapshot, the last ticks included
         sent = sum(len(ln) + 1 for ln in first + lines)
         self.assertEqual(tel["uart_bps"], sent // 10)
-        self.assertEqual(tel["q_size"], 32768)
+        self.assertEqual(tel["q_size"], 65536)
         self.assertLessEqual(tel["q_hwm"], tel["q_size"])
         self.assertLessEqual(tel["heap_min"], tel["heap"])
         self.assertIn(tel["temp_dc"], range(350, 500))
