@@ -29,5 +29,10 @@ uint32_t ra_item_bytes(uint32_t len);
 void ra_init(ring_acct_t *r);
 void ra_add(ring_acct_t *r, uint32_t len);
 void ra_sub(ring_acct_t *r, uint32_t len);
+/* Return one item: subtract it, then call give_back (vRingbufferReturnItem).
+ * Subtracting first means the rx callback can never commit into the freed
+ * space while the returned item is still counted, so used and the
+ * high-water mark never exceed what the ring can hold. */
+void ra_return(ring_acct_t *r, uint32_t len, void (*give_back)(void *ctx), void *ctx);
 uint32_t ra_used(ring_acct_t *r);
 uint32_t ra_hwm(ring_acct_t *r);

@@ -71,6 +71,52 @@ static void test_mismatched_return_clamps_at_zero(void)
     CHECK_EQ(ra_hwm(&r), 20);
 }
 
+/* Stand-in for vRingbufferReturnItem: at the moment the space is given back,
+ * the rx callback may immediately commit a new item into it. */
+typedef struct {
+    ring_acct_t *r;
+    uint32_t used_at_return;
+    uint32_t refill_len;
+    int calls;
+} give_back_t;
+
+static void give_back(void *ctx)
+{
+    give_back_t *g = ctx;
+    g->calls++;
+    g->used_at_return = ra_used(g->r);
+    if (g->refill_len)
+        ra_add(g->r, g->refill_len);
+}
+
+static void test_return_subtracts_before_giving_the_space_back(void)
+{
+    ring_acct_t r;
+    ra_init(&r);
+    ra_add(&r, 100);
+    ra_add(&r, 100);
+    give_back_t g = {.r = &r};
+    ra_return(&r, 100, give_back, &g);
+    CHECK_EQ(g.calls, 1);
+    CHECK_EQ(g.used_at_return, 108);         /* already subtracted */
+    CHECK_EQ(ra_used(&r), 108);
+}
+
+static void test_refill_into_returned_space_does_not_raise_the_peak(void)
+{
+    /* A full ring, one item returned, and a new item of the same size
+     * committed into the freed space: the peak is still one ring's worth. */
+    ring_acct_t r;
+    ra_init(&r);
+    for (int i = 0; i < 4; i++)
+        ra_add(&r, 248);                     /* 4 x 256 */
+    CHECK_EQ(ra_hwm(&r), 1024);
+    give_back_t g = {.r = &r, .refill_len = 248};
+    ra_return(&r, 248, give_back, &g);
+    CHECK_EQ(ra_used(&r), 1024);
+    CHECK_EQ(ra_hwm(&r), 1024);
+}
+
 void suite_ringacct(void)
 {
     RUN(test_item_bytes_match_the_idf_layout);
@@ -78,4 +124,6 @@ void suite_ringacct(void)
     RUN(test_hwm_keeps_the_peak);
     RUN(test_steady_flow_stays_small);
     RUN(test_mismatched_return_clamps_at_zero);
+    RUN(test_return_subtracts_before_giving_the_space_back);
+    RUN(test_refill_into_returned_space_does_not_raise_the_peak);
 }

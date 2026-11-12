@@ -10,8 +10,8 @@
 
 #include <stdlib.h>
 
-#define MIN_TESTS 62
-#define MIN_ASSERTS 855
+#define MIN_TESTS 64
+#define MIN_ASSERTS 861
 
 int g_asserts;
 static int g_tests, g_failed, g_extra, g_fail_total;

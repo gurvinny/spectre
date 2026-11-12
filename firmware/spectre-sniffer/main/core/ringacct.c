@@ -35,6 +35,12 @@ void ra_sub(ring_acct_t *r, uint32_t len)
         ;
 }
 
+void ra_return(ring_acct_t *r, uint32_t len, void (*give_back)(void *ctx), void *ctx)
+{
+    ra_sub(r, len);
+    give_back(ctx);
+}
+
 uint32_t ra_used(ring_acct_t *r)
 {
     return atomic_load(&r->used);

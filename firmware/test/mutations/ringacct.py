@@ -19,4 +19,12 @@ MUTATIONS = [
      "test_used_follows_adds_and_returns"),
     ("init-leaves-hwm", "    atomic_init(&r->hwm, 0);", "    atomic_init(&r->hwm, 4096);", "test_steady_flow_stays_small"),
     ("init-leaves-used", "    atomic_init(&r->used, 0);", "    atomic_init(&r->used, 64);", "test_used_follows_adds_and_returns"),
+    ("return-gives-back-before-subtracting",
+     "    ra_sub(r, len);\n    give_back(ctx);", "    give_back(ctx);\n    ra_sub(r, len);",
+     "test_refill_into_returned_space_does_not_raise_the_peak"),
+    ("return-skips-subtract", "    ra_sub(r, len);\n    give_back(ctx);", "    ra_sub(r, 0 * len);\n    give_back(ctx);",
+     "test_return_subtracts_before_giving_the_space_back"),
+    ("return-never-gives-back", "    ra_sub(r, len);\n    give_back(ctx);",
+     "    ra_sub(r, len);\n    (void)give_back;\n    (void)ctx;",
+     "test_return_subtracts_before_giving_the_space_back"),
 ]

@@ -205,10 +205,14 @@ static void radio_init(const cfg_t *c)
 
 /* ---- tasks --------------------------------------------------------------- */
 
-static void ring_return(void *item, size_t sz)
+static void ring_give_back(void *item)
 {
     vRingbufferReturnItem(s_ring, item);
-    ra_sub(&s_ring_acct, (uint32_t)sz);
+}
+
+static void ring_return(void *item, size_t sz)
+{
+    ra_return(&s_ring_acct, (uint32_t)sz, ring_give_back, item);
 }
 
 static void emit_task(void *arg)
