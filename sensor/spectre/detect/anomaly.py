@@ -7,7 +7,11 @@
   time can indicate spoofing or a device physically approaching (proximity).
   Readings are only compared on the same band and channel: a hopping radio
   also hears a strong AP, far weaker, on neighbouring channels (adjacent-
-  channel leakage), and that difference is not a change in the device.
+  channel leakage), and that difference is not a change in the device. For
+  an AP the key also carries the channel it advertises (from ``ap_info``),
+  because an auto-channel AP is heard on-air or as leakage on the same board
+  channel depending on where it operates. An AP's own probe requests (its
+  off-channel scan) are sent on the board's channel, so they are not compared.
 * **Randomized-MAC probing** — modern devices probe with locally-administered
   (randomized) MACs; a high volume of these can indicate a recon tool.
 
@@ -44,10 +48,22 @@ class AnomalyRule(Rule):
         self._last_jump_alert: dict[str, float] = {}  # mac -> last rssi-jump alert ts
         self._muted: set[str] = set()            # operator-trusted MACs (no alerts)
         self._start_ts: float | None = None      # first-event time, for warm-up
+        # (band, bssid) -> channel the AP advertises (None if not reported)
+        self._ap_channel: dict[tuple[str, str], int | None] = {}
 
     def set_muted_devices(self, macs: list[str]) -> None:
         """Trusted client MACs whose anomaly alerts are silenced."""
         self._muted = {m.upper() for m in macs if m}
+
+    def set_ap_info(self, rec: dict) -> None:
+        """Track the channel an AP advertises, from its ``ap_info`` record."""
+        p = rec.get("payload") or {}
+        bssid = p.get("bssid")
+        if not isinstance(bssid, str) or not bssid:
+            return
+        ds_ch = p.get("ds_ch")
+        self._ap_channel[(rec.get("band"), bssid.upper())] = (
+            ds_ch if isinstance(ds_ch, int) and not isinstance(ds_ch, bool) else None)
 
     def process(self, ev: Event) -> list[Threat]:
         mac = ev.src
@@ -86,8 +102,10 @@ class AnomalyRule(Rule):
                 ))
 
         # ── RSSI jump ──────────────────────────────────────────────────
-        if ev.rssi is not None:
-            key = (mac, ev.band, ev.ch)
+        ap = (ev.band, mac)
+        own_scan = ap in self._ap_channel and ev.frame_type == "PROBE_REQ"
+        if ev.rssi is not None and not own_scan:
+            key = (mac, ev.band, ev.ch, self._ap_channel.get(ap))
             last = self._last_rssi.get(key)
             self._last_rssi[key] = (ev.rssi, ev.received_at)
             max_age = float(self.cfg("rssi_jump_max_age_seconds", 10))

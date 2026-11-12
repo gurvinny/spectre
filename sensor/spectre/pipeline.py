@@ -93,6 +93,7 @@ class Pipeline:
 
     def record_ap_info(self, rec: dict) -> None:
         self.store.insert_ap_info(rec)
+        self.engine.set_ap_info(rec)
 
     # ── ingest (hot path, synchronous) ────────────────────────────────
     def ingest(self, ev: Event) -> None:

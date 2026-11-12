@@ -57,6 +57,9 @@ class Rule:
     def set_muted_devices(self, macs: list[str]) -> None:
         """Override in rules that honour the trusted/muted device list."""
 
+    def set_ap_info(self, rec: dict) -> None:
+        """Override in rules that use an AP's advertised parameters."""
+
 
 class Engine:
     """Runs every rule against each event and collects the threats."""
@@ -88,3 +91,7 @@ class Engine:
     def set_muted_devices(self, macs: list[str]) -> None:
         for rule in self.rules:
             rule.set_muted_devices(macs)
+
+    def set_ap_info(self, rec: dict) -> None:
+        for rule in self.rules:
+            rule.set_ap_info(rec)

@@ -445,6 +445,23 @@ class TestWiring(StoreCase):
         self.pipe.record_ap_info(self.ap_rec(5.0))
         self.assertEqual([r["bssid"] for r in self.store.ap_info()], ["00:00:5E:00:53:01"])
 
+    def test_pipeline_ap_info_reaches_the_detection_engine(self):
+        # An AP that moves channel between two readings is not an RSSI jump.
+        def beacon(ts, rssi):
+            return Event(received_at=ts, sensor_id="ttyUSB1", band="5GHz",
+                         frame_type="BEACON", ch=36, rssi=rssi, src="00:00:5E:00:53:01",
+                         dst="FF:FF:FF:FF:FF:FF", bssid="00:00:5E:00:53:01")
+        t0 = 1_700_000_100.0
+        self.pipe.record_ap_info(self.ap_rec(t0))
+        self.assertEqual(self.pipe.engine.feed(beacon(t0 + 1, -15)), [])
+        moved = self.ap_rec(t0 + 2, line=AP_INFO.replace('"ds_ch":36', '"ds_ch":149'))
+        self.pipe.record_ap_info(moved)
+        self.assertEqual(
+            [t.rule for t in self.pipe.engine.feed(beacon(t0 + 3, -75))], [])
+        self.pipe.record_ap_info(self.ap_rec(t0 + 4))
+        self.assertEqual(
+            [t.rule for t in self.pipe.engine.feed(beacon(t0 + 5, -80))], ["anomaly"])
+
     def test_serial_reader_routes_every_v2_line(self):
         reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)
         self.feed(reader, "\n".join([BOOT_5, AP_INFO, TELEMETRY, CLOCK, ACK_24, DEAUTH]) + "\n")

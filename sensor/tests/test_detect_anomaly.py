@@ -1,7 +1,12 @@
 """New-device / RSSI anomaly rule. Author: gurvinny"""
 import unittest
 
+import json
+
 from _support import frame, make_cfg
+
+from spectre.parser import Parser
+from spectre.sim.generate import TAG
 
 from spectre.detect.anomaly import AnomalyRule, _is_random_mac
 
@@ -17,6 +22,23 @@ T0 = 1_700_000_000.0
 def seen(ts, mac=DEV, rssi=-60, bssid=AP, ch=6, band="2.4GHz"):
     return frame(T0 + ts, type="PROBE_REQ", ch=ch, rssi=rssi, src=mac, band=band,
                  dst="FF:FF:FF:FF:FF:FF", bssid=bssid)
+
+
+def ap_info(bssid=AP, ds_ch=6, band="2.4GHz"):
+    """An ap_info record as the parser hands it to the pipeline."""
+    fields = {"event": "ap_info", "why": "changed", "bssid": bssid, "ch": ds_ch,
+              "ssid": "LabNet"}
+    if ds_ch is not None:
+        fields["ds_ch"] = ds_ch
+    recs = []
+    Parser("sensor-test", default_band=band, on_ap_info=recs.append).parse_line(
+        TAG + json.dumps(fields))
+    return recs[0]
+
+
+def beacon(ts, rssi, ch=6, ap=AP, band="2.4GHz"):
+    return frame(T0 + ts, type="BEACON", ch=ch, rssi=rssi, src=ap, band=band,
+                 dst="FF:FF:FF:FF:FF:FF", bssid=ap, ssid="LabNet")
 
 
 class TestRandomMac(unittest.TestCase):
@@ -147,6 +169,74 @@ class TestAnomalyRule(unittest.TestCase):
     def test_first_reading_is_never_a_jump(self):
         self.cfg.values["new_device_alerts"] = False
         self.assertEqual(self.feed(seen(100, rssi=-10)), [])
+
+
+
+class TestApOperatingChannel(unittest.TestCase):
+    """An auto-channel AP is heard on-air or as leakage depending on where it
+    operates, and its own off-channel probe requests arrive on-air anywhere."""
+
+    def setUp(self):
+        self.cfg = make_cfg(new_device_warmup_seconds=0)
+        self.rule = AnomalyRule(self.cfg)
+
+    def feed(self, *events):
+        out = []
+        for ev in events:
+            out.extend(self.rule.process(ev))
+        return out
+
+    def test_jump_on_an_unchanged_operating_channel_still_fires(self):
+        self.rule.set_ap_info(ap_info(ds_ch=6))
+        self.feed(beacon(30, -15))
+        [t] = self.feed(beacon(31, -75))
+        self.assertEqual(t.detail["delta"], -60)
+
+    def test_readings_across_an_operating_channel_move_are_not_compared(self):
+        self.rule.set_ap_info(ap_info(ds_ch=6))
+        self.feed(beacon(30, -15))
+        self.rule.set_ap_info(ap_info(ds_ch=11))
+        self.assertEqual(self.feed(beacon(31, -75)), [])
+
+    def test_moving_back_compares_with_the_reading_from_that_channel(self):
+        self.rule.set_ap_info(ap_info(ds_ch=6))
+        self.feed(beacon(30, -15))
+        self.rule.set_ap_info(ap_info(ds_ch=11))
+        self.feed(beacon(31, -75))
+        self.rule.set_ap_info(ap_info(ds_ch=6))
+        [t] = self.feed(beacon(32, -80))
+        self.assertEqual(t.detail["previous_rssi"], -15)
+
+    def test_ap_probe_request_is_not_compared(self):
+        self.rule.set_ap_info(ap_info(ds_ch=6))
+        self.feed(beacon(30, -88, ch=11))
+        self.assertEqual(self.feed(seen(31, mac=AP, rssi=-22, ch=11)), [])
+
+    def test_ap_probe_request_does_not_become_the_baseline(self):
+        self.rule.set_ap_info(ap_info(ds_ch=6))
+        self.feed(seen(30, mac=AP, rssi=-22, ch=11))
+        self.assertEqual(self.feed(beacon(31, -88, ch=11)), [])
+
+    def test_client_probe_requests_are_still_compared(self):
+        self.rule.set_ap_info(ap_info(ds_ch=6))
+        self.feed(seen(30, rssi=-90, ch=6))
+        self.assertEqual(len(self.feed(seen(31, rssi=-30, ch=6))), 1)
+
+    def test_ap_info_on_another_band_does_not_change_this_band(self):
+        self.rule.set_ap_info(ap_info(ds_ch=36, band="5GHz"))
+        self.feed(seen(30, mac=AP, rssi=-88, ch=11))
+        self.assertEqual(len(self.feed(seen(31, mac=AP, rssi=-22, ch=11))), 1)
+
+    def test_ap_info_without_operating_channel_keeps_the_board_channel_key(self):
+        self.rule.set_ap_info(ap_info(ds_ch=None))
+        self.feed(beacon(30, -15))
+        self.assertEqual(len(self.feed(beacon(31, -75))), 1)
+
+    def test_ap_info_bssid_case_is_normalised(self):
+        self.rule.set_ap_info(ap_info(bssid=AP.lower(), ds_ch=6))
+        self.feed(beacon(30, -15))
+        self.rule.set_ap_info(ap_info(bssid=AP.lower(), ds_ch=11))
+        self.assertEqual(self.feed(beacon(31, -75)), [])
 
 
 if __name__ == "__main__":

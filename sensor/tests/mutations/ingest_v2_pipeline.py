@@ -7,5 +7,9 @@ MUTATIONS = [
      '        self.store.insert_ap_info(rec)\n',
      '        self.store.insert_board_event(rec)\n',
      'test_pipeline_records_ap_info'),
+    ('ap-info-never-reaches-detection',
+     '        self.engine.set_ap_info(rec)\n',
+     '',
+     'test_pipeline_ap_info_reaches_the_detection_engine'),
 ]
 SURVIVORS = {}
