@@ -77,6 +77,16 @@ flowchart LR
 Counts `DEAUTH`+`DISASSOC` per BSSID over a sliding window. Fires `high` when the count crosses the
 threshold. The classic WiFi DoS / handshake-capture signature.
 
+Only frames a receiver would act on are counted:
+- **Protected frames** (PMF, `fl & 0x40`) are skipped: they cannot be forged without the key.
+- **Retransmissions** are skipped: a frame with the Retry bit and the same sequence number as the last
+  frame seen from the same source to the same destination. An AP resends an unacknowledged deauth many
+  times, so one legitimate frame would otherwise cross the threshold on its own. This mirrors the 802.11
+  duplicate filter, so a frame skipped here is one the victim discards too.
+
+Reason codes are not used to filter: real APs send reason 7, the same code common attack tools use.
+Frames without `sn`/`fl` (v1 firmware) are all counted.
+
 - `deauth_threshold` (default 20), `deauth_window_seconds` (default 10).
 
 ### Rogue AP / Evil Twin — `evil_twin.py`
@@ -106,6 +116,10 @@ on the allowlist** fires `critical`; the same SSID on an unexpected band fires `
   channel**: a hopping radio also hears a strong AP, much weaker, on neighbouring channels (adjacent-channel
   leakage), and that difference is not a change in the device. A previous reading older than
   `rssi_jump_max_age_seconds` (default 10, about two channel sweeps) is not compared against.
+  For an access point the comparison also keys on the channel it advertises (`ds_ch` from `ap_info`):
+  an auto-channel AP is heard on-air or as leakage on the same board channel depending on where it
+  operates, so readings from before and after a channel move are not compared. An AP's own probe
+  requests (its off-channel scan) arrive on-air on any channel and are not compared either.
 
 ## Tuning notes
 
