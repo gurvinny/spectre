@@ -45,7 +45,7 @@
 #define UART_BAUD 460800
 #define UART_TX_BUF 8192
 #define UART_RX_BUF 1024
-#define RING_SIZE (32 * 1024)
+#define RING_SIZE (64 * 1024)
 #define MGMT_COPY_MAX 768    /* enough for the IEs we parse */
 #define DATA_COPY_MAX 64     /* header + LLC + EAPOL key info */
 #define TELEMETRY_MS 10000
