@@ -63,5 +63,15 @@ MUTATIONS = [
      'or pipeline.pending_cmd_ack(sensor_id, command["id"], t0))',
      'or None)',
      "test_api_round_trip_against_the_simulator"),
+    ("log-board-name-unsanitised",
+     'log.warning("board %s: %s sent by %s", _log_safe(sensor_id),',
+     'log.warning("board %s: %s sent by %s", sensor_id,',
+     "test_log_line_cannot_be_split_by_a_board_name"),
+    ("log-safe-keeps-newline",
+     '.replace("\\n", "\\\\n")', "",
+     "test_log_line_cannot_be_split_by_a_board_name"),
+    ("log-safe-keeps-carriage-return",
+     'str(value).replace("\\r", "\\\\r")', "str(value)",
+     "test_log_line_cannot_be_split_by_a_board_name"),
 ]
 SURVIVORS = {}

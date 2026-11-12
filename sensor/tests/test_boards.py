@@ -364,6 +364,20 @@ class TestBoardCommand(BoardApiCase):
         self.board.answer = False
         self.assertIsNone(self.post({"cmd": "get_config", "id": "dup"}).json()["ack"])
 
+    def test_log_line_cannot_be_split_by_a_board_name(self):
+        # A board name is caller-supplied text in the URL: a CR/LF in it must
+        # not forge a second log record.
+        forged = "ttyUSB9\r\nWARNING:spectre.api:board ttyUSB1: set sent by admin"
+        other = FakeBoard(self.store, forged)
+        self.senders[forged] = other.send
+        with self.assertLogs("spectre.api", level="WARNING") as logs:
+            r = self.post({"cmd": "get_config"}, board=forged.replace("\r", "%0D").replace("\n", "%0A"))
+        self.assertEqual(r.status_code, 200, r.text)
+        [line] = [m for m in logs.output if "sent by" in m]
+        self.assertNotIn("\n", line)
+        self.assertNotIn("\r", line)
+        self.assertIn("ttyUSB9\\r\\nWARNING", line)
+
     def test_unknown_board_is_404_and_not_audited(self):
         self.assertEqual(self.post({"cmd": "get_config"}, board="ttyUSB7").status_code, 404)
         self.assertEqual(self.cmd_rows(), [])

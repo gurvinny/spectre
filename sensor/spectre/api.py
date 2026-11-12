@@ -27,6 +27,12 @@ from .store import Store
 
 log = logging.getLogger("spectre.api")
 
+
+def _log_safe(value: object) -> str:
+    """Caller-supplied text for a log line, with CR/LF escaped so it cannot
+    split the line into a forged second record."""
+    return str(value).replace("\r", "\\r").replace("\n", "\\n")
+
 ADMIN = "admin"
 SESSION_COOKIE = "spectre_session"
 SESSION_TTL = 7 * 24 * 3600
@@ -364,7 +370,8 @@ def create_app(store: Store, config: Config, pipeline: Pipeline,
                                   "kind": "cmd", "payload": audit})
         if status != 200:
             raise HTTPException(status_code=status, detail=detail)
-        log.warning("board %s: %s sent by %s", sensor_id, command["cmd"], user)
+        log.warning("board %s: %s sent by %s", _log_safe(sensor_id),
+                    _log_safe(command["cmd"]), _log_safe(user))
 
         def find_ack() -> dict | None:
             # Stored, or received and still waiting for the next ingest flush.
