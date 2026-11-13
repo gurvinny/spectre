@@ -12,6 +12,9 @@
   because an auto-channel AP is heard on-air or as leakage on the same board
   channel depending on where it operates. An AP's own probe requests (its
   off-channel scan) are sent on the board's channel, so they are not compared.
+  A jump must hold for the next reading on the same key: at a channel hop the
+  radio can stamp a frame heard on the channel it is leaving with the one it
+  is tuning to, which reads as one far-off value and then reverts.
 * **Randomized-MAC probing** — modern devices probe with locally-administered
   (randomized) MACs; a high volume of these can indicate a recon tool.
 
@@ -45,6 +48,8 @@ class AnomalyRule(Rule):
         self._seen: set[str] = set()             # client MACs ever seen
         # (mac, band, channel) -> (rssi, ts) of the last reading there
         self._last_rssi: dict[tuple, tuple[int, float]] = {}
+        # key -> (rssi before the jump, ts of the jumped reading) awaiting the next one
+        self._pending_jump: dict[tuple, tuple[int, float]] = {}
         self._last_jump_alert: dict[str, float] = {}  # mac -> last rssi-jump alert ts
         self._muted: set[str] = set()            # operator-trusted MACs (no alerts)
         self._start_ts: float | None = None      # first-event time, for warm-up
@@ -106,15 +111,24 @@ class AnomalyRule(Rule):
         own_scan = ap in self._ap_channel and ev.frame_type == "PROBE_REQ"
         if ev.rssi is not None and not own_scan:
             key = (mac, ev.band, ev.ch, self._ap_channel.get(ap))
-            last = self._last_rssi.get(key)
-            self._last_rssi[key] = (ev.rssi, ev.received_at)
             max_age = float(self.cfg("rssi_jump_max_age_seconds", 10))
+            jump = int(self.cfg("rssi_jump_db", 55))
+            pending = self._pending_jump.pop(key, None)
+            if pending is not None:
+                # Second reading after a jump: compare with the level before it.
+                last, confirming = pending, True
+            else:
+                last, confirming = self._last_rssi.get(key), False
+            self._last_rssi[key] = (ev.rssi, ev.received_at)
             prev = (last[0] if last is not None
                     and ev.received_at - last[1] <= max_age else None)
-            jump = int(self.cfg("rssi_jump_db", 55))
+            jumped = prev is not None and abs(ev.rssi - prev) >= jump
+            if jumped and not confirming:
+                self._pending_jump[key] = (prev, ev.received_at)
+                jumped = False
             cooldown = float(self.cfg("rssi_jump_cooldown_seconds", 60))
             last_alert = self._last_jump_alert.get(mac, 0.0)
-            if (not muted and prev is not None and abs(ev.rssi - prev) >= jump
+            if (not muted and jumped
                     and ev.received_at - last_alert >= cooldown):
                 self._last_jump_alert[mac] = ev.received_at
                 out.append(Threat(

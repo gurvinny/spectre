@@ -459,10 +459,12 @@ class TestWiring(StoreCase):
         moved = self.ap_rec(t0 + 2, line=AP_INFO.replace('"ds_ch":36', '"ds_ch":149'))
         self.pipe.record_ap_info(moved)
         self.assertEqual(
-            [t.rule for t in self.pipe.engine.feed(beacon(t0 + 3, -75))], [])
+            [t.rule for t in self.pipe.engine.feed(beacon(t0 + 3, -75))
+             + self.pipe.engine.feed(beacon(t0 + 3.1, -75))], [])
         self.pipe.record_ap_info(self.ap_rec(t0 + 4))
         self.assertEqual(
-            [t.rule for t in self.pipe.engine.feed(beacon(t0 + 5, -80))], ["anomaly"])
+            [t.rule for t in self.pipe.engine.feed(beacon(t0 + 5, -80))
+             + self.pipe.engine.feed(beacon(t0 + 5.1, -80))], ["anomaly"])
 
     def test_serial_reader_routes_every_v2_line(self):
         reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)

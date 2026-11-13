@@ -190,7 +190,9 @@ class TestPublishedWazuhConfig(unittest.TestCase):
         dev = "00:00:5E:00:53:20"
         rule.process(frame(100, type="PROBE_REQ", ch=6, rssi=-90, src=dev,
                            dst="FF:FF:FF:FF:FF:FF", bssid="FF:FF:FF:FF:FF:FF", ssid="?"))
-        [t] = rule.process(frame(101, type="PROBE_REQ", ch=6, rssi=-30, src=dev,
+        rule.process(frame(101, type="PROBE_REQ", ch=6, rssi=-30, src=dev,
+                           dst="FF:FF:FF:FF:FF:FF", bssid="FF:FF:FF:FF:FF:FF", ssid="?"))
+        [t] = rule.process(frame(101.1, type="PROBE_REQ", ch=6, rssi=-30, src=dev,
                                  dst="FF:FF:FF:FF:FF:FF", bssid="FF:FF:FF:FF:FF:FF", ssid="?"))
         self.assertTrue(t.title.startswith("RSSI jump"))
         self.assertEqual(self.verdict(t), ("100604", []))
