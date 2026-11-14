@@ -399,6 +399,19 @@ class TestApInfoStore(StoreCase):
         self.assertEqual([r["received_at"] for r in self.store.ap_info(since=20.0)], [20.0, 30.0])
         self.assertEqual(len(self.store.ap_info(limit=2)), 2)
 
+    def test_latest_ap_info_is_the_newest_row_per_band_and_bssid(self):
+        self.store.insert_ap_info(self.ap_rec(5.0, band="2.4GHz"))
+        self.store.insert_ap_info(self.ap_rec(10.0))
+        self.store.insert_ap_info(self.ap_rec(15.0, line=AP_INFO_HIDDEN))
+        self.store.insert_ap_info(self.ap_rec(
+            20.0, line=AP_INFO.replace('"ds_ch":36', '"ds_ch":149')))
+        rows = self.store.latest_ap_info()
+        self.assertEqual(sorted((r["band"], r["bssid"], r["received_at"], r["payload"]["ds_ch"])
+                                for r in rows),
+                         [("2.4GHz", "00:00:5E:00:53:01", 5.0, 36),
+                          ("5GHz", "00:00:5E:00:53:01", 20.0, 149),
+                          ("5GHz", "00:00:5E:00:53:09", 15.0, 1)])
+
     def test_pruned_with_the_raw_window(self):
         now = time.time()
         self.store.insert_ap_info(self.ap_rec(now - 3 * 3600))
@@ -465,6 +478,26 @@ class TestWiring(StoreCase):
         self.assertEqual(
             [t.rule for t in self.pipe.engine.feed(beacon(t0 + 5, -80))
              + self.pipe.engine.feed(beacon(t0 + 5.1, -80))], ["anomaly"])
+
+    def own_scan_after_restart(self):
+        """A restarted pipeline hears an AP's beacon, then its own probe requests."""
+        def ev(ts, kind, rssi):
+            return Event(received_at=ts, sensor_id="ttyUSB1", band="5GHz",
+                         frame_type=kind, ch=36, rssi=rssi, src="00:00:5E:00:53:01",
+                         dst="FF:FF:FF:FF:FF:FF",
+                         bssid="00:00:5E:00:53:01" if kind == "BEACON" else None)
+        pipe = Pipeline(self.store, Config(self.store))
+        t0 = 1_700_000_200.0
+        return [t.rule for e in (ev(t0, "BEACON", -80), ev(t0 + 1, "PROBE_REQ", -15),
+                                 ev(t0 + 1.1, "PROBE_REQ", -15))
+                for t in pipe.engine.feed(e)]
+
+    def test_restart_restores_stored_ap_info_for_detection(self):
+        self.store.insert_ap_info(self.ap_rec(1_700_000_000.0))
+        self.assertEqual(self.own_scan_after_restart(), [])
+
+    def test_without_stored_ap_info_an_ap_scan_reads_as_a_jump(self):
+        self.assertEqual(self.own_scan_after_restart(), ["anomaly"])
 
     def test_serial_reader_routes_every_v2_line(self):
         reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)

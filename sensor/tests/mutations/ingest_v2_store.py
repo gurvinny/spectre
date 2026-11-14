@@ -47,5 +47,13 @@ MUTATIONS = [
      '_str_or_none(p.get("hash")), json.dumps(p)))',
      '_str_or_none(p.get("hash")), "{}"))',
      'test_round_trip_with_typed_columns'),
+    ('latest-ap-info-takes-the-oldest-row',
+     '" JOIN (SELECT MAX(id) AS id FROM ap_info GROUP BY band, bssid) m"',
+     '" JOIN (SELECT MIN(id) AS id FROM ap_info GROUP BY band, bssid) m"',
+     'test_latest_ap_info_is_the_newest_row_per_band_and_bssid'),
+    ('latest-ap-info-not-per-band',
+     'FROM ap_info GROUP BY band, bssid) m"',
+     'FROM ap_info GROUP BY bssid) m"',
+     'test_latest_ap_info_is_the_newest_row_per_band_and_bssid'),
 ]
 SURVIVORS = {}

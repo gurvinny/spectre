@@ -120,6 +120,8 @@ on the allowlist** fires `critical`; the same SSID on an unexpected band fires `
   an auto-channel AP is heard on-air or as leakage on the same board channel depending on where it
   operates, so readings from before and after a channel move are not compared. An AP's own probe
   requests (its off-channel scan) arrive on-air on any channel and are not compared either.
+  What each AP advertises is restored from the stored `ap_info` when the sensor starts, so a sensor
+  restart without a board reboot does not lose it until the board's next periodic `ap_info`.
   A jump must **hold for the next reading** on the same key, measured against the level before the
   jump and within `rssi_jump_max_age_seconds` of it. At a channel hop the radio can stamp a frame heard
   on the channel it is leaving with the one it is tuning to: one far-off reading that reverts on the

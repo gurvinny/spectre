@@ -89,6 +89,7 @@ class Pipeline:
         self.prune_seconds = 300.0
         self.refresh_known_networks()
         self.refresh_muted_devices()
+        self.restore_ap_info()
 
     # ── known networks (evil-twin allowlist) ──────────────────────────
     def refresh_known_networks(self) -> None:
@@ -101,6 +102,14 @@ class Pipeline:
     def refresh_muted_devices(self) -> None:
         macs = self.cfg("muted_devices", []) or []
         self.engine.set_muted_devices([str(m) for m in macs])
+
+    # ── AP parameters across a restart ────────────────────────────────
+    def restore_ap_info(self) -> None:
+        """Seed detection with each AP's newest stored ap_info. A board sends it on
+        first sighting after its own boot, then periodically, so a sensor-only
+        restart would otherwise forget what an AP advertises until the next one."""
+        for row in self.store.latest_ap_info():
+            self.engine.set_ap_info(row)
 
     # ── board lifecycle (boot, sweep counters) ─────────────────────────
     def record_board_event(self, rec: dict) -> None:

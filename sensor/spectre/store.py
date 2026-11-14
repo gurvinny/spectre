@@ -553,6 +553,20 @@ class Store:
             out.append(d)
         return out
 
+    def latest_ap_info(self) -> list[dict]:
+        """The newest ap_info row for each (band, BSSID), shaped like :meth:`ap_info`."""
+        rows = self._read().execute(
+            "SELECT a.* FROM ap_info a"
+            " JOIN (SELECT MAX(id) AS id FROM ap_info GROUP BY band, bssid) m"
+            " ON a.id = m.id ORDER BY a.id").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d.pop("id", None)
+            d["payload"] = json.loads(d["payload"] or "{}")
+            out.append(d)
+        return out
+
     # ── Known networks (evil-twin allowlist) ──────────────────────────
     def list_known_networks(self) -> list[dict]:
         rows = self._read().execute(
