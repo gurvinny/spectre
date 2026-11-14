@@ -11,5 +11,13 @@ MUTATIONS = [
      '        self.engine.set_ap_info(rec)\n',
      '',
      'test_pipeline_ap_info_reaches_the_detection_engine'),
+    ('ap-info-not-restored-at-startup',
+     '        self.restore_ap_info()\n',
+     '',
+     'test_restart_restores_stored_ap_info_for_detection'),
+    ('restored-rows-skip-detection',
+     '            self.engine.set_ap_info(row)\n',
+     '            pass\n',
+     'test_restart_restores_stored_ap_info_for_detection'),
 ]
 SURVIVORS = {}
