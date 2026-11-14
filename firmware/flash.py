@@ -52,7 +52,7 @@ DEFAULT_BUILD = HERE / "spectre-sniffer" / "build"
 APP_BIN = "spectre-sniffer.bin"
 FW_NAME = "spectre-sniffer"
 FLASH_BAUD = 460800        # esptool's write speed
-APP_BAUD = 921600          # the firmware's line rate (CONFIG_ESP_CONSOLE_UART_BAUDRATE)
+APP_BAUD = 921600          # the firmware's line rate (UART_BAUD in main/app_main.c)
 APP_BAUDS = (460800, 921600)  # 2.0.4 and earlier v2 builds run at 460800
 ESPTOOL = "esptool==5.6.0"
 BANDS = ("2.4GHz", "5GHz")

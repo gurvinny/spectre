@@ -33,7 +33,6 @@
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
 
 #include "apcache.h"
 #include "cfg.h"
@@ -43,7 +42,7 @@
 #include "ringacct.h"
 
 #define UART_PORT UART_NUM_0
-#define UART_BAUD CONFIG_ESP_CONSOLE_UART_BAUDRATE  /* one rate for console, bootloader and data */
+#define UART_BAUD 921600  /* data line rate; sensor/tests/test_flash_tool.py keeps the tools in step */
 #define UART_TX_BUF 8192
 #define UART_RX_BUF 1024
 #define RING_SIZE (64 * 1024)

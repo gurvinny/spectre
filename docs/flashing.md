@@ -202,7 +202,7 @@ SERIAL_BAUD=921600
 ```
 
 If a board's lines arrive garbled at 921600, its USB-serial adapter may not hold that rate: build
-with `CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800` in `sdkconfig.defaults` and set `SERIAL_BAUD` to match. `flash.py --baud 460800` verifies such a build.
+with `#define UART_BAUD 460800` in `firmware/spectre-sniffer/main/app_main.c` and set `SERIAL_BAUD` to match. `flash.py --baud 460800` verifies such a build.
 
 `SERIAL_BAUD` is read on every start (it is not seeded into the settings database). An unsupported value
 stops the sensor at startup on purpose: reading at the wrong speed produces garbage that would otherwise

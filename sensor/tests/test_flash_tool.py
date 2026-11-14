@@ -578,5 +578,29 @@ class MainTests(unittest.TestCase):
         self.assertEqual(json.loads(printed)["plan"]["channels"], "1,6,11")
 
 
+class FirmwareRateTests(unittest.TestCase):
+    """The tool, the simulator and the firmware source agree on the line rate.
+
+    ESP-IDF ignores ``CONFIG_ESP_CONSOLE_UART_BAUDRATE`` unless the console is
+    a custom UART, so a rate taken from it builds silently at 115200. The rate
+    is a literal in the firmware, and this keeps the copies in step with it.
+    """
+
+    SRC = _PATH.parent / "spectre-sniffer" / "main" / "app_main.c"
+
+    def firmware_rate(self):
+        import re
+        m = re.search(r"^#define UART_BAUD +(\d+)\b", self.SRC.read_text(), re.M)
+        self.assertIsNotNone(m, "UART_BAUD must be a number in app_main.c")
+        return int(m.group(1))
+
+    def test_firmware_rate_is_the_tool_default(self):
+        self.assertEqual(self.firmware_rate(), flash.APP_BAUD)
+
+    def test_simulator_speaks_the_firmware_rate(self):
+        from spectre.sim import generate
+        self.assertEqual(generate.BAUD, self.firmware_rate())
+
+
 if __name__ == "__main__":
     unittest.main()

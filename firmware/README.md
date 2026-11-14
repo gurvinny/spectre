@@ -118,7 +118,7 @@ make it the 5 GHz board send `{"cmd":"set","band":"5GHz"}` (see below). The choi
 survives reflashing the app.
 
 The sensor must read at the same speed: set `SERIAL_BAUD=921600` in its `.env` before starting it again
-(`460800` for 2.0.4 and earlier; `flash.py --baud 460800` verifies those). If a board's lines arrive garbled at 921600, its USB-serial adapter may not hold that rate: build with `CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800` in `sdkconfig.defaults` and set `SERIAL_BAUD` to match.
+(`460800` for 2.0.4 and earlier; `flash.py --baud 460800` verifies those). If a board's lines arrive garbled at 921600, its USB-serial adapter may not hold that rate: build with `#define UART_BAUD 460800` in `main/app_main.c` and set `SERIAL_BAUD` to match.
 
 ### Before the first flash: keep a way back
 
