@@ -1,7 +1,7 @@
 CONFIG_IDF_TARGET="esp32c5"
 # Console and bootloader share UART0 with the data lines: same baud, quiet logs.
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
-CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
 CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 # The radio timestamp is only precise without power saving.

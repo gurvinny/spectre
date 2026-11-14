@@ -51,7 +51,9 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_BUILD = HERE / "spectre-sniffer" / "build"
 APP_BIN = "spectre-sniffer.bin"
 FW_NAME = "spectre-sniffer"
-BAUD = 460800
+FLASH_BAUD = 460800        # esptool's write speed
+APP_BAUD = 921600          # the firmware's line rate (CONFIG_ESP_CONSOLE_UART_BAUDRATE)
+APP_BAUDS = (460800, 921600)  # 2.0.4 and earlier v2 builds run at 460800
 ESPTOOL = "esptool==5.6.0"
 BANDS = ("2.4GHz", "5GHz")
 # The board prints CONFIG_APP_RETRIEVE_LEN_ELF_SHA hex chars of the ELF sha;
@@ -174,7 +176,7 @@ def load_image(build: Path) -> Image:
                  stub=stub)
 
 
-def esptool_argv(port: str, image: Image, baud: int = BAUD,
+def esptool_argv(port: str, image: Image, baud: int = FLASH_BAUD,
                  esptool: str = ESPTOOL) -> list[str]:
     argv = ["uvx", "--from", esptool, "esptool", "--chip", "esp32c5",
             "--port", port, "--baud", str(baud),
@@ -201,7 +203,7 @@ def parse_line(text: str) -> dict | None:
 
 
 def check_boot(boot: dict, desc: AppDesc, band: str, plan: dict | None,
-               baud: int = BAUD) -> list[str]:
+               baud: int = APP_BAUD) -> list[str]:
     """Every way *boot* differs from what was flashed and configured."""
     problems = []
     if boot.get("fw") != FW_NAME:
@@ -225,7 +227,7 @@ def check_boot(boot: dict, desc: AppDesc, band: str, plan: dict | None,
 
 # ---- serial -----------------------------------------------------------------
 
-def open_port(path: str, baud: int = BAUD) -> int:
+def open_port(path: str, baud: int = APP_BAUD) -> int:
     """Open *path* raw N-8-1 with DTR/RTS held low, so opening does not reset."""
     fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     try:
@@ -335,7 +337,7 @@ def soak(link, seconds: float) -> dict:
 def configure_and_verify(link, desc: AppDesc, band: str, keep_config: bool = False,
                          settle: float = SETTLE_S,
                          boot_timeout: float = BOOT_TIMEOUT_S,
-                         soak_s: float = SOAK_S) -> dict:
+                         soak_s: float = SOAK_S, baud: int = APP_BAUD) -> dict:
     """Set the band (and default plan), reboot, and check the new boot line."""
     if band not in BANDS:
         raise FlashError(f"band must be one of {', '.join(BANDS)}")
@@ -353,12 +355,12 @@ def configure_and_verify(link, desc: AppDesc, band: str, keep_config: bool = Fal
     boot = wait_for(link, lambda o: o.get("event") == "boot", boot_timeout)
     if boot is None:
         raise FlashError(f"no boot line within {boot_timeout:.0f} s of the reboot")
-    problems = check_boot(boot, desc, band, plan)
+    problems = check_boot(boot, desc, band, plan, baud)
     if problems:
         raise FlashError("; ".join(problems))
     if wait_for(link, lambda o: o.get("event") == "sniffer_started", boot_timeout) is None:
         raise FlashError("booted, but the sniffer never started")
-    result = {"band": band, "plan": plan, "reset": boot.get("reset")}
+    result = {"band": band, "baud": baud, "plan": plan, "reset": boot.get("reset")}
     if soak_s > 0:
         result["soak"] = s = soak(link, soak_s)
         if s["bad_lines"] or s["seq_gaps"]:
@@ -383,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="do not flash; configure and check the running image")
     ap.add_argument("--keep-config", action="store_true",
                     help="keep the board's channel plan instead of the band defaults")
+    ap.add_argument("--baud", type=int, default=APP_BAUD, choices=APP_BAUDS,
+                    help=f"the firmware's line rate (default {APP_BAUD}; 460800 up to 2.0.4)")
     ap.add_argument("--soak", type=float, default=SOAK_S,
                     help="seconds of clean output required after start (0 = skip)")
     args = ap.parse_args(argv)
@@ -390,11 +394,11 @@ def main(argv: list[str] | None = None) -> int:
         image = load_image(args.build)
         if not args.verify_only:
             subprocess.run(esptool_argv(args.port, image), check=True, stdout=sys.stderr)
-        fd = open_port(args.port)
+        fd = open_port(args.port, args.baud)
         try:
             result = configure_and_verify(SerialLink(fd), image.desc, args.band,
                                           keep_config=args.keep_config,
-                                          soak_s=args.soak)
+                                          soak_s=args.soak, baud=args.baud)
         finally:
             os.close(fd)
     except (FlashError, OSError, subprocess.CalledProcessError) as e:

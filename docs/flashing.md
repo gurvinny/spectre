@@ -43,7 +43,7 @@ flowchart TB
     BK --> F["4 · flash.py per board<br/>write · set band · reboot"]
     F --> V{"boot line +<br/>10 s soak OK?"}
     V -- "no" --> RB["Roll back<br/>write-flash backup"]
-    V -- "yes" --> BD["5 · SERIAL_BAUD=460800"]
+    V -- "yes" --> BD["5 · SERIAL_BAUD=921600"]
     BD --> U["6 · Start sensor<br/>reset boards to log boot"]
 
     style G fill:#0a0e12,stroke:#9B8CFF,stroke-width:2px,color:#fff
@@ -129,7 +129,8 @@ Leave out `--build` to flash `firmware/spectre-sniffer/build/`. For each board, 
    the app descriptor inside the image;
 2. writes it with esptool at 460800 (with `--no-stub` when the build's `flasher_args.json` asks for it,
    as ESP-IDF does for the C5);
-3. opens the port with DTR and RTS held low, sets the band, restores that band's default channel plan
+3. opens the port at the app's 921600 (`--baud 460800` for 2.0.4 and earlier) with DTR and RTS held low,
+   sets the band, restores that band's default channel plan
    (`--keep-config` keeps the current one) and reboots the board by command;
 4. checks the new `boot` line against the image (firmware name, version, ELF sha, band, baud and plan);
 5. soaks for 10 s (`--soak N`, `0` skips): every line must parse and frame `seq` must not skip.
@@ -193,11 +194,15 @@ reflashing the app.
 
 ## 5. Point the sensor at the new speed
 
-The v2 firmware talks at **460800** baud; the original firmware used 115200. Set it in `.env`:
+The v2 firmware talks at **921600** baud from 2.0.5 (460800 up to 2.0.4); the original firmware used
+115200. Set it in `.env`:
 
 ```bash
-SERIAL_BAUD=460800
+SERIAL_BAUD=921600
 ```
+
+If a board's lines arrive garbled at 921600, its USB-serial adapter may not hold that rate: build
+with `CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800` in `sdkconfig.defaults` and set `SERIAL_BAUD` to match. `flash.py --baud 460800` verifies such a build.
 
 `SERIAL_BAUD` is read on every start (it is not seeded into the settings database). An unsupported value
 stops the sensor at startup on purpose: reading at the wrong speed produces garbage that would otherwise
@@ -241,7 +246,7 @@ back to what the old firmware used (115200 for the original sniffer sketch), the
 | `flash.py` times out waiting for the boot line | Something else holds the port, or the board is on another adapter. Check `fuser`, and that `--port` is the board you mean. |
 | esptool cannot connect | On most dev boards: hold **BOOT**, tap **RST**, release **BOOT** to enter the ROM bootloader by hand, then run again. A charge-only USB cable also looks like this. |
 | Sensor exits at startup | `SERIAL_BAUD` is not one of the supported rates. |
-| Lines arrive as garbage | `SERIAL_BAUD` does not match the firmware (115200 vs 460800). |
+| Lines arrive as garbage | `SERIAL_BAUD` does not match the firmware (115200, 460800 or 921600). |
 | Every port open restarts the board | The reader is not holding DTR/RTS low. Use the sensor's reader or `flash.py`, or a tool that can clear both lines before opening. |
 | A board reports the wrong band | Set it by command (`{"cmd":"set","band":"5GHz"}`) or re-run `flash.py` with the right `--band`. |
 | Boards page keeps the *Boot line missed* note | The sensor was stopped when the board last booted. Restart the board with the sensor running (step 6). |

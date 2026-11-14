@@ -54,7 +54,7 @@ flowchart TB
     RX -- "full: drop_queue++" --> RG
     RG --> EM
     HP --> EM
-    EM -- "UART0 · 460800" --> RD
+    EM -- "UART0 · 921600" --> RD
     RD --> PR --> PL
     PL --> DE
     PL -- "1 s batches" --> ST

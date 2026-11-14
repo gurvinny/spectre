@@ -45,7 +45,7 @@ flowchart TB
     DEC --> AP["ap_info<br/>new · changed · every ap_info_s"]
     DEC --> FR["frame line<br/>seq++"]
     HP["hop task"] --> EV["sweep · telemetry · clock_sync"]
-    AP --> U(["UART0 · 460800"])
+    AP --> U(["UART0 · 921600"])
     FR --> U
     EV --> U
     U -- "JSON commands" --> CM["cmd task"] --> NVS[("NVS config")]
@@ -104,8 +104,8 @@ python3 firmware/flash.py --port /dev/ttyUSB1 --band 5GHz
 ```
 
 `flash.py` flashes the build in `spectre-sniffer/build/` (or `--build DIR`, e.g. the unpacked `Firmware
-build` CI artifact, whose `SHA256SUMS` it checks first) with esptool via `uvx` at 460800 baud. It then sets
-the band by command, restores that band's default plan (`--keep-config` keeps the current one), reboots the
+build` CI artifact, whose `SHA256SUMS` it checks first) with esptool via `uvx` at 460800 baud. It then talks to the app at 921600 (`--baud 460800` for 2.0.4 and
+earlier), sets the band by command, restores that band's default plan (`--keep-config` keeps the current one), reboots the
 board by command and checks the new `boot` line against the image: firmware name, version, ELF sha256,
 band, baud and the acknowledged plan. After `sniffer_started` it soaks for 10 s (`--soak N`): every line
 must parse and frame `seq` must not skip. It prints a JSON report with the sha256 of every image file on
@@ -117,7 +117,8 @@ Plain `idf.py -p /dev/ttyUSB0 -b 460800 flash` works too. A fresh board then boo
 make it the 5 GHz board send `{"cmd":"set","band":"5GHz"}` (see below). The choice is saved in NVS and
 survives reflashing the app.
 
-The sensor must read at the same speed: set `SERIAL_BAUD=460800` in its `.env` before starting it again.
+The sensor must read at the same speed: set `SERIAL_BAUD=921600` in its `.env` before starting it again
+(`460800` for 2.0.4 and earlier; `flash.py --baud 460800` verifies those). If a board's lines arrive garbled at 921600, its USB-serial adapter may not hold that rate: build with `CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800` in `sdkconfig.defaults` and set `SERIAL_BAUD` to match.
 
 ### Before the first flash: keep a way back
 
@@ -154,7 +155,7 @@ python3 ../scripts/mutate.py
 
 ## Wire format
 
-Every line is `<190>ESP32C5 wifi_sniffer: {json}\n` at **460800 baud**, 8N1. Lines with `"type"` are frames;
+Every line is `<190>ESP32C5 wifi_sniffer: {json}\n` at **921600 baud** (460800 up to 2.0.4), 8N1. Lines with `"type"` are frames;
 lines with `"event"` are everything else. The keys of the original firmware (`seq`, `uptime_ms`, `ch`, `rssi`,
 `type`, `src`, `dst`, `bssid`, `ssid`) keep their names and meanings; everything else is additive, so an older
 sensor still ingests these lines.
@@ -291,8 +292,8 @@ stateDiagram-v2
 - **20/40 MHz receive.** The C5 decodes 802.11a/b/g/n/ac/ax at 20 MHz and 802.11n at 40 MHz. Wider
   (80/160 MHz) PPDUs are not received. Beacons and other management frames are still sent at 20 MHz
   and are seen.
-- **460800 baud** is about 46 KB/s. At a typical 280-300 byte line that is an estimated ~150 frame lines per
-  second; the measured ceiling will be documented after a long soak ([#100](https://github.com/gurvinny/spectre/issues/100)). Anything above it is counted in
+- **921600 baud** is about 92 KB/s. At a typical 280-300 byte line that is an estimated ~300 frame lines per
+  second (half that at 460800); the measured ceiling will be documented after a long soak ([#100](https://github.com/gurvinny/spectre/issues/100)). Anything above it is counted in
   `drop_queue` rather than lost silently.
 - `mcs` and `bw` are decoded from the PHY SIG field per the IEEE 802.11 layout; VHT/HE MU frames report no MCS.
 

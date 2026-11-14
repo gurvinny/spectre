@@ -52,7 +52,7 @@ def app_image(version="2.0.0", project="spectre-sniffer", elf=ELF, idf="v5.5.4",
     return header + b"\0" * 8 + desc + b"\0" * 80
 
 
-def boot_line(band="2.4GHz", ver="2.0.0", sha=ELF_HEX[:9], baud=460800,
+def boot_line(band="2.4GHz", ver="2.0.0", sha=ELF_HEX[:9], baud=921600,
               fw="spectre-sniffer", plan=None) -> dict:
     return {"event": "boot", "chip": "ESP32-C5", "mode": "promiscuous",
             **(plan or DEFAULTS[band]), "fw": fw, "ver": ver, "elf_sha": sha,
@@ -430,12 +430,21 @@ class PortTests(unittest.TestCase):
             except OSError:
                 pass
 
-    def test_open_port_is_raw_460800_and_clears_dtr_rts_twice(self):
+    def test_open_port_takes_another_baud(self):
+        with mock.patch.object(flash.fcntl, "ioctl"):
+            fd = flash.open_port(os.ttyname(self.slave), 460800)
+        try:
+            attrs = termios.tcgetattr(fd)
+            self.assertEqual((attrs[4], attrs[5]), (termios.B460800, termios.B460800))
+        finally:
+            os.close(fd)
+
+    def test_open_port_is_raw_at_the_app_baud_and_clears_dtr_rts_twice(self):
         with mock.patch.object(flash.fcntl, "ioctl") as ioctl:
             fd = flash.open_port(os.ttyname(self.slave))
         try:
             attrs = termios.tcgetattr(fd)
-            self.assertEqual((attrs[4], attrs[5]), (termios.B460800, termios.B460800))
+            self.assertEqual((attrs[4], attrs[5]), (termios.B921600, termios.B921600))
             self.assertEqual(attrs[3] & termios.ICANON, 0)
             self.assertTrue(os.get_blocking(fd) is False)
             bits = struct.pack("I", 0x002 | 0x004)
@@ -506,13 +515,33 @@ class MainTests(unittest.TestCase):
         self.assertTrue(self.esptool.call_args.kwargs.get("check"))
         # esptool's progress must not land in the JSON report on stdout
         self.assertIs(self.esptool.call_args.kwargs.get("stdout"), self.err)
-        self.open_port.assert_called_once_with("/dev/ttyUSB0")
+        self.open_port.assert_called_once_with("/dev/ttyUSB0", 921600)
         self.close.assert_called_once_with(99)
         rep = json.loads(printed)
         self.assertEqual((rep["flashed"], rep["version"], rep["band"]), (True, "2.0.0", "2.4GHz"))
         self.assertEqual(rep["elf_sha256"], ELF_HEX)
         self.assertEqual(rep["image_sha256"]["spectre-sniffer.bin"],
                          hashlib.sha256(app_image()).hexdigest())
+
+    def test_baud_flag_sets_the_port_and_the_boot_check(self):
+        self.board = FakeBoard(boot_overrides={"baud": 460800})
+        with mock.patch.object(flash, "SerialLink", return_value=self.board):
+            code, printed, _ = self.main("--verify-only", "--baud", "460800")
+        self.assertEqual(code, 0)
+        self.open_port.assert_called_once_with("/dev/ttyUSB0", 460800)
+        self.assertEqual(json.loads(printed)["baud"], 460800)
+
+    def test_a_board_at_another_baud_fails_the_default_check(self):
+        self.board = FakeBoard(boot_overrides={"baud": 460800})
+        with mock.patch.object(flash, "SerialLink", return_value=self.board):
+            code, _, errors = self.main("--verify-only")
+        self.assertEqual(code, 1)
+        self.assertIn("baud is 460800, expected 921600", errors)
+
+    def test_esptool_still_flashes_at_460800(self):
+        self.main()
+        argv = self.esptool.call_args.args[0]
+        self.assertEqual(argv[argv.index("--baud") + 1], "460800")
 
     def test_verify_only_never_runs_esptool(self):
         code, printed, _ = self.main("--verify-only")

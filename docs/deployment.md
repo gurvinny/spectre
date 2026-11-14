@@ -63,7 +63,7 @@ flowchart TB
 
 ```bash
 bash init.sh
-# boards flashed with the v2 firmware? set SERIAL_BAUD=460800 in .env (docs/flashing.md)
+# boards flashed with the v2 firmware? set SERIAL_BAUD=921600 in .env (docs/flashing.md)
 docker compose up -d --build
 # open http://10.0.0.10:4100
 ```
