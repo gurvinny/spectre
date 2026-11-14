@@ -431,7 +431,7 @@ All routes are under `/api` and require an authenticated session cookie, except 
 | `GET` `PUT` | `/api/settings` | Live configuration |
 | `GET` `POST` `DELETE` | `/api/known-networks` | Evil-twin allowlist |
 | `GET` `POST` `DELETE` | `/api/muted-devices` | Per-MAC anomaly muting |
-| `GET` | `/api/boards` | Per-board firmware, radio plan, loss, UART load and last command |
+| `GET` | `/api/boards` | Per-board firmware, radio plan, loss, UART load, lines that did not parse and last command |
 | `POST` | `/api/boards/{id}/cmd` | Send a firmware command; `403` unless `SPECTRE_BOARD_CONTROL=true`, answered with the board's `cmd_ack` when it arrives within 3 s |
 | `WS` | `/ws` | Live frame / threat / summary push |
 

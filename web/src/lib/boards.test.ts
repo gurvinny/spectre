@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   ackText, buildSetCommand, fmtFrac, fmtPct, levelColor, liveness, loadLevel, lossLevel,
-  parseChannels,
+  malformedLevel, parseChannels,
 } from "@/lib/boards";
 
 test("liveness ages a board from live to stale to silent", () => {
@@ -99,4 +99,11 @@ test("ackText says what the board answered", () => {
   assert.equal(ackText({ cmd: "set", ok: false, err: "bad dwell", received_at: 1 }),
     "set refused: bad dwell");
   assert.equal(ackText({ received_at: 1 }), "command refused: unknown error");
+});
+
+test("any line that did not parse is a warning, never critical", () => {
+  assert.equal(malformedLevel(null), "none");
+  assert.equal(malformedLevel(0), "ok");
+  assert.equal(malformedLevel(1), "warn");
+  assert.equal(malformedLevel(1e9), "warn");
 });

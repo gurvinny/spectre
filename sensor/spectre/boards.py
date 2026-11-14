@@ -91,8 +91,10 @@ def _with_ts(r: Optional[dict]) -> Optional[dict]:
     return dict(r["payload"], received_at=r["received_at"]) if r else None
 
 
-def summarize(sensor_id: str, latest: Mapping[str, dict], controllable: bool) -> dict:
-    """One board's card: *latest* maps each kind to its newest stored row."""
+def summarize(sensor_id: str, latest: Mapping[str, dict], controllable: bool,
+              malformed_lines: int = 0) -> dict:
+    """One board's card: *latest* maps each kind to its newest stored row;
+    *malformed_lines* counts its lines that did not parse since the sensor started."""
     rows = list(latest.values())
     newest = max(rows, key=lambda r: r["received_at"]) if rows else None
     boot, ack = latest.get("boot"), latest.get("cmd_ack")
@@ -137,16 +139,20 @@ def summarize(sensor_id: str, latest: Mapping[str, dict], controllable: bool) ->
                          sweep["payload"] if sweep else None, sweep_newer),
         "last_cmd": _with_ts(latest.get("cmd")),
         "last_ack": _with_ts(ack),
+        "malformed_lines": malformed_lines,
     }
 
 
-def list_boards(latest_rows: list[dict], controllable: set[str] | Mapping[str, Any]) -> list[dict]:
+def list_boards(latest_rows: list[dict], controllable: set[str] | Mapping[str, Any],
+                malformed: Mapping[str, int] | None = None) -> list[dict]:
     """Every board with stored rows or a live command path, sorted by id."""
+    malformed = malformed or {}
     by_board: dict[str, dict[str, dict]] = {}
     for r in latest_rows:
         by_board.setdefault(r["sensor_id"], {})[r["kind"]] = r
     ids = sorted(set(by_board) | set(controllable))
-    return [summarize(sid, by_board.get(sid, {}), sid in controllable) for sid in ids]
+    return [summarize(sid, by_board.get(sid, {}), sid in controllable, malformed.get(sid, 0))
+            for sid in ids]
 
 
 def validate_command(body: Any) -> dict:

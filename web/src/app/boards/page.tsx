@@ -12,7 +12,7 @@ import { Empty, Panel, Pill, SectionHeader } from "@/components/ui";
 import { bandColor, compact, fmtUptime, timeAgo } from "@/lib/format";
 import {
   ackText, buildSetCommand, fmtFrac, fmtPct, levelColor, liveness, loadLevel, lossLevel,
-  type SetForm,
+  malformedLevel, type SetForm,
 } from "@/lib/boards";
 import type { Board, BoardAck, BoardsResponse } from "@/lib/types";
 
@@ -103,6 +103,10 @@ function BoardCard({ board, now, control, onChange }: {
             sub={h.queue_fill != null ? `queue peak ${fmtFrac(h.queue_fill)}` : undefined} />
           <Stat label="Heap min" value={h.heap_min != null ? `${compact(h.heap_min)}B` : "—"} />
           <Stat label="Temp" value={h.temp_c != null ? `${h.temp_c.toFixed(1)}°C` : "—"} />
+          <Stat label="Bad lines" testId="board-malformed"
+            value={board.malformed_lines != null ? compact(board.malformed_lines) : "—"}
+            color={levelColor(malformedLevel(board.malformed_lines ?? null))}
+            sub="since sensor start" />
         </dl>
         {fw?.boot_missed && (
           <p data-testid="boot-missed" className="mt-3 text-xs" style={{ color: levelColor("warn") }}>

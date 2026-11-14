@@ -92,8 +92,8 @@ MUTATIONS = [
      "    ids = sorted(set(by_board))",
      "test_lists_boards_from_events_and_senders"),
     ("every-board-controllable",
-     "[summarize(sid, by_board.get(sid, {}), sid in controllable) for sid in ids]",
-     "[summarize(sid, by_board.get(sid, {}), True) for sid in ids]",
+     "[summarize(sid, by_board.get(sid, {}), sid in controllable, malformed.get(sid, 0))",
+     "[summarize(sid, by_board.get(sid, {}), True, malformed.get(sid, 0))",
      "test_lists_boards_from_events_and_senders"),
     ("any-cmd-allowed",
      '    if not isinstance(body, dict) or body.get("cmd") not in COMMANDS:',
@@ -132,5 +132,8 @@ MUTATIONS = [
      "test_telemetry_names_the_running_image"),
     ("flag-not-reported", '        firmware["boot_missed"] = boot_missed', '        firmware["boot_missed"] = None',
      "test_telemetry_names_the_running_image"),
+    ('board-malformed-lookup-ignores-id',
+     'malformed.get(sid, 0))', 'sum(malformed.values()))',
+     'test_lists_malformed_lines_per_board'),
 ]
 SURVIVORS = {}

@@ -35,6 +35,7 @@ log = logging.getLogger("spectre.pipeline")
 RECENT_RING = 2000        # frames kept in memory for the overview/heatmap
 FEED_BATCH_CAP = 300      # max frames pushed to the live feed per broadcast tick
 SUBSCRIBER_QUEUE_CAP = 50
+MALFORMED_WARN_S = 60.0   # at most one dropped-lifecycle-line warning per board per minute
 
 
 def _is_random_mac(mac: Optional[str]) -> bool:
@@ -71,6 +72,8 @@ class Pipeline:
         self._fps_win = SlidingWindow(5.0)
         self._sensor_fps: dict[str, SlidingWindow] = {}
         self._sensor_last: dict[str, dict] = {}       # sensor_id -> {band,last_seen,frames}
+        self.malformed_lines: dict[str, int] = {}     # sensor_id -> lines that did not parse
+        self._malformed_warned: dict[str, float] = {}  # sensor_id -> last warning
 
         # threat rate-limiting
         self._threat_cooldown: dict[str, float] = {}
@@ -105,6 +108,17 @@ class Pipeline:
     # ── board lifecycle (boot, sweep counters) ─────────────────────────
     def record_board_event(self, rec: dict) -> None:
         self._board_buffer.append(rec)
+
+    def record_malformed(self, sensor_id: str, line: str) -> None:
+        """Count a line from *sensor_id* that did not parse. A lost lifecycle line
+        (boot, telemetry) is logged, at most once a minute per board."""
+        n = self.malformed_lines[sensor_id] = self.malformed_lines.get(sensor_id, 0) + 1
+        t = now()
+        last = self._malformed_warned.get(sensor_id)
+        if '"event"' in line and (last is None or t - last >= MALFORMED_WARN_S):
+            self._malformed_warned[sensor_id] = t
+            log.warning("board %s dropped a lifecycle line that did not parse"
+                        " (%d malformed lines so far)", sensor_id, n)
 
     def record_ap_info(self, rec: dict) -> None:
         self._ap_info_buffer.append(rec)

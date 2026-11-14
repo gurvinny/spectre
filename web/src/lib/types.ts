@@ -164,6 +164,8 @@ export interface Board {
   last_cmd: { id: string; command: Record<string, unknown>; user: string; sent?: number;
               error?: string; received_at: number } | null;
   last_ack: BoardAck | null;
+  /** Lines from this board that did not parse since the sensor started. */
+  malformed_lines?: number;
 }
 
 export interface BoardsResponse {
