@@ -104,7 +104,7 @@ on the allowlist** fires `critical`; the same SSID on an unexpected band fires `
 
 ### Beacon / probe flood — `flood.py`
 - **Beacon flood**: too many *distinct* BSSIDs beaconing within the window (`beacon_flood_distinct_bssids`, default 40) → `medium`. Catches mdk4/airbase-style fake-AP spam. Counted **per band**, each band with its own window and cooldown, so a 2.4 GHz and a 5 GHz board's ordinary neighbourhoods do not add up to a flood.
-- **Probe flood**: `PROBE_REQ` rate above `probe_flood_threshold` (default 120) in the window → `medium`.
+- **Probe flood**: `PROBE_REQ` count at or above `probe_flood_threshold` (default 120) in the window → `medium`. Counted **per band**, each band with its own window and cooldown, like the beacon flood. Many devices probe at once in a busy place, so the alert does not blame the device that sent the last probe: the detail lists `distinct_sources` and the three loudest `top_sources` (MAC and count), and the threat's source is the loudest one.
 - `flood_window_seconds` (default 5), `flood_cooldown_seconds` (default 30).
 
 ### New device / RSSI anomaly — `anomaly.py`

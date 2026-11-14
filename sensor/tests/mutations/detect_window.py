@@ -1,4 +1,4 @@
-"""SlidingWindow, shared by deauth, probe flood and the fps counters."""
+"""SlidingWindow, shared by deauth and the fps counters."""
 TARGET = "spectre/detect/__init__.py"
 TESTS = "tests/test_detect_deauth.py"
 
