@@ -499,6 +499,27 @@ class TestWiring(StoreCase):
     def test_without_stored_ap_info_an_ap_scan_reads_as_a_jump(self):
         self.assertEqual(self.own_scan_after_restart(), ["anomaly"])
 
+    def test_serial_reader_counts_malformed_lines_for_its_board(self):
+        reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)
+        self.feed(reader, '{"event":"bo\n' + BOOT_5 + "\n")
+        self.assertEqual(self.pipe.malformed_lines, {"ttyUSB1": 1})
+
+    def test_a_dropped_lifecycle_line_is_logged_once_a_minute_per_board(self):
+        with mock.patch("spectre.pipeline.now", return_value=1000.0), \
+                self.assertLogs("spectre.pipeline", "WARNING") as logs:
+            self.pipe.record_malformed("ttyUSB2", '{"type":"BEACON",x')
+            self.pipe.record_malformed("ttyUSB1", '{"event":"boot",x')
+            self.pipe.record_malformed("ttyUSB1", '{"event":"boot",x')
+            self.pipe.record_malformed("ttyUSB0", '{"event":"boot",x')
+            self.pipe.record_malformed("ttyUSB0", '{"type":"BEACON",x')
+        self.assertEqual([r.split("board ")[1].split()[0] for r in logs.output],
+                         ["ttyUSB1", "ttyUSB0"])
+        with mock.patch("spectre.pipeline.now", return_value=1061.0), \
+                self.assertLogs("spectre.pipeline", "WARNING") as later:
+            self.pipe.record_malformed("ttyUSB1", '{"event":"boot",x')
+        self.assertEqual(len(later.output), 1)
+        self.assertIn("3 malformed", later.output[0])
+
     def test_serial_reader_routes_every_v2_line(self):
         reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)
         self.feed(reader, "\n".join([BOOT_5, AP_INFO, TELEMETRY, CLOCK, ACK_24, DEAUTH]) + "\n")

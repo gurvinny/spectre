@@ -335,7 +335,8 @@ def create_app(store: Store, config: Config, pipeline: Pipeline,
     @app.get("/api/boards")
     def list_boards(user: str = Depends(current_user)) -> dict:
         return {"control_enabled": control,
-                "boards": boards.list_boards(store.latest_board_events(), senders)}
+                "boards": boards.list_boards(store.latest_board_events(), senders,
+                                              pipeline.malformed_lines)}
 
     @app.post("/api/boards/{sensor_id}/cmd")
     def board_command(sensor_id: str, body: dict,

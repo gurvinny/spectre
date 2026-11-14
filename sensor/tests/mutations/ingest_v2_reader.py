@@ -16,8 +16,8 @@ MUTATIONS = [
      'speed = termios.B115200',
      'test_the_port_is_opened_at_the_requested_speed'),
     ('serial-reader-ap-info-unwired',
-     ',\n                             on_ap_info=pipeline.record_ap_info)',
-     ')',
+     ',\n                             on_ap_info=pipeline.record_ap_info,',
+     ',',
      'test_serial_reader_routes_every_v2_line'),
     ('carriage-return-allowed',
      'if "\\n" in text or "\\r" in text:',
@@ -63,5 +63,8 @@ MUTATIONS = [
      '        return len(data)\n',
      '        return len(text)\n',
      'test_a_dict_goes_out_as_one_compact_json_line'),
+    ('reader-malformed-not-wired',
+     '                             on_malformed=self._on_malformed)', ')',
+     'test_serial_reader_counts_malformed_lines_for_its_board'),
 ]
 SURVIVORS = {}

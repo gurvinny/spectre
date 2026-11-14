@@ -33,6 +33,8 @@ test("both simulated boards report firmware, plan and health", async ({ page }) 
     await expect(c).toContainText("live");
     // Telemetry arrives every 10 s; a loss figure replaces the dash once it has.
     await expect(c.getByTestId("board-loss")).toHaveText(/%$/, { timeout: 30_000 });
+    // Simulated boards send only well-formed lines.
+    await expect(c.getByTestId("board-malformed")).toHaveText("0");
   }
   await expect(page.getByText("control on")).toBeVisible();
 

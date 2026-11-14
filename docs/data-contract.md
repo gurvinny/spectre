@@ -176,6 +176,11 @@ drain is `502`. Both are audited too. `GET /api/boards` reduces the newest row o
 board to firmware, radio plan (the boot plan, or a newer successful `cmd_ack`'s), and health:
 loss is `drop_queue + drop_overflow` over `rx_total` (`drop_short` and `drop_dedup` are not losses),
 UART load is `uart_bps × 10` over the boot `baud` (8N1).
+`malformed_lines` counts the board's lines that held a `{` but did not parse, since the sensor
+started (in memory, not stored); a dropped lifecycle line is also logged, at most once a minute per
+board. A board reset part-way through a line leaves that partial line and the boot ROM's output (sent
+at 115200, so unreadable at the app baud) in front of the boot record. The parser takes the first `{`
+from which the rest of the line parses, so the boot record is still read.
 
 ## Schema migration
 

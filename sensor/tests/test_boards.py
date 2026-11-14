@@ -321,6 +321,14 @@ class TestBoardsRoute(BoardApiCase):
         self.assertFalse(by_id["ttyUSB9"]["controllable"])
         self.assertEqual(by_id["ttyUSB9"]["firmware"]["ver"], "2.0.0")
 
+    def test_lists_malformed_lines_per_board(self):
+        self.store.insert_board_event(row("boot", BOOT_V2, 100.0, sensor="ttyUSB9"))
+        for _ in range(3):
+            self.pipe.record_malformed("ttyUSB9", '{"event":"bo')
+        by_id = {b["sensor_id"]: b for b in self.client.get("/api/boards").json()["boards"]}
+        self.assertEqual((by_id["ttyUSB9"]["malformed_lines"],
+                          by_id["ttyUSB1"]["malformed_lines"]), (3, 0))
+
     def test_senders_registered_after_startup_are_seen(self):
         self.senders["sim-5GHz"] = self.board.send
         ids = [b["sensor_id"] for b in self.client.get("/api/boards").json()["boards"]]

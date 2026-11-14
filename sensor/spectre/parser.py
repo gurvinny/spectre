@@ -49,16 +49,21 @@ _KNOWN_KEYS = _V1_KEYS | set(_V2_INTS) | set(_V2_STRS) | {"ouis"}
 
 
 def _extract_json(line: str) -> Optional[dict]:
-    """Return the JSON object embedded in *line*, or None if there isn't one."""
-    start = line.find("{")
+    """Return the JSON object embedded in *line*, or None if there isn't one.
+
+    The object runs to the last ``}``. Its start is the first ``{`` that parses:
+    a board reset part-way through a line leaves that partial line, then boot-ROM
+    output read at the wrong baud, in front of the next record on the same line.
+    """
     end = line.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        return None
-    try:
-        obj = json.loads(line[start:end + 1])
-        return obj if isinstance(obj, dict) else None
-    except (ValueError, json.JSONDecodeError):
-        return None
+    start = line.find("{")
+    while start != -1 and start < end:
+        try:
+            obj = json.loads(line[start:end + 1])
+            return obj if isinstance(obj, dict) else None
+        except (ValueError, json.JSONDecodeError):
+            start = line.find("{", start + 1)
+    return None
 
 
 class Parser:
@@ -70,13 +75,19 @@ class Parser:
 
     def __init__(self, sensor_id: str, default_band: str = "unknown",
                  on_lifecycle: Optional[Callable[[dict], None]] = None,
-                 on_ap_info: Optional[Callable[[dict], None]] = None) -> None:
+                 on_ap_info: Optional[Callable[[dict], None]] = None,
+                 on_malformed: Optional[Callable[[str], None]] = None) -> None:
         self.sensor_id = sensor_id
         self.band = default_band
         self.malformed = 0
         self.last_event_kind: Optional[str] = None
         self.on_lifecycle = on_lifecycle
+        self.on_malformed = on_malformed
         self.on_ap_info = on_ap_info
+
+    def _report_malformed(self, raw: str) -> None:
+        if self.on_malformed is not None:
+            self.on_malformed(raw)
 
     def parse_line(self, raw: str) -> Optional[Event]:
         """Parse one line. Returns an :class:`Event` for frame lines.
@@ -95,6 +106,7 @@ class Parser:
             # looked like they wanted to be data.
             if "{" in line:
                 self.malformed += 1
+                self._report_malformed(raw)
             return None
 
         # ── Lifecycle events (no "type", carry "event") ────────────────
@@ -122,6 +134,7 @@ class Parser:
         frame_type = obj.get("type")
         if not isinstance(frame_type, str):
             self.malformed += 1
+            self._report_malformed(raw)
             return None
 
         ch = _as_int(obj.get("ch"))
