@@ -35,6 +35,8 @@ function level(v: number | null, warn: number, crit: number): Level {
 export const lossLevel = (pct: number | null) => level(pct, 0.5, 2);
 /** Fraction of the UART line rate in use; past ~90% lines start queueing. */
 export const loadLevel = (frac: number | null) => level(frac, 0.7, 0.9);
+/** Lines from the board that did not parse since the sensor started: any is worth a look. */
+export const malformedLevel = (n: number | null) => level(n, 1, Infinity);
 
 export function levelColor(l: Level | Liveness): string {
   switch (l) {

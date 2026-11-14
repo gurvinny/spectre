@@ -73,5 +73,8 @@ MUTATIONS = [
     ("log-safe-keeps-carriage-return",
      'str(value).replace("\\r", "\\\\r")', "str(value)",
      "test_log_line_cannot_be_split_by_a_board_name"),
+    ('api-malformed-not-passed',
+     'senders,\n                                              pipeline.malformed_lines)}', 'senders)}',
+     'test_lists_malformed_lines_per_board'),
 ]
 SURVIVORS = {}

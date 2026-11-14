@@ -23,8 +23,8 @@ MUTATIONS = [
      "extra = {k: v for k, v in obj.items() if k not in _KNOWN_KEYS}", "extra = {}",
      "test_unknown_keys_are_preserved_in_extra"),
     ("noise-counted-as-malformed",
-     '            if "{" in line:\n                self.malformed += 1\n',
-     "            self.malformed += 1\n",
+     '            if "{" in line:\n                self.malformed += 1\n                self._report_malformed(raw)\n',
+     "            self.malformed += 1\n            self._report_malformed(raw)\n",
      "test_malformed_counter_counts_only_data_shaped_noise"),
     ("bad-int-raises",
      "    except (TypeError, ValueError):\n        return None\n\n\ndef _as_mac",
@@ -33,6 +33,17 @@ MUTATIONS = [
     ("array-accepted-as-object",
      "return obj if isinstance(obj, dict) else None", "return obj",
      None),
+    ("json-start-not-retried",
+     'start = line.find("{", start + 1)', "return None",
+     "test_boot_line_after_a_partial_frame_and_rom_noise_is_kept"),
+    ("malformed-noise-not-reported",
+     "                self.malformed += 1\n                self._report_malformed(raw)\n",
+     "                self.malformed += 1\n",
+     "test_each_malformed_line_is_reported_to_the_callback"),
+    ("untyped-object-not-reported",
+     "            self.malformed += 1\n            self._report_malformed(raw)\n            return None",
+     "            self.malformed += 1\n            return None",
+     "test_each_malformed_line_is_reported_to_the_callback"),
 ]
 SURVIVORS = {
     "array-accepted-as-object":

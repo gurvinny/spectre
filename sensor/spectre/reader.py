@@ -88,10 +88,14 @@ class SerialReader:
         self.pipeline = pipeline
         self.sensor_id = os.path.basename(path)  # e.g. "ttyUSB0"
         self.parser = Parser(self.sensor_id, on_lifecycle=pipeline.record_board_event,
-                             on_ap_info=pipeline.record_ap_info)
+                             on_ap_info=pipeline.record_ap_info,
+                             on_malformed=self._on_malformed)
         self._fd: int | None = None
         self._buf = b""
         self._send_lock = threading.Lock()
+
+    def _on_malformed(self, line: str) -> None:
+        self.pipeline.record_malformed(self.sensor_id, line)
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self._fd = _open_serial(self.path, self.baud)

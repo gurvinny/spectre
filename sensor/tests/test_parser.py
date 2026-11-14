@@ -84,6 +84,40 @@ class TestSpectreParser(unittest.TestCase):
         self.parser.parse_line('{"type":7}')             # non-string type
         self.assertEqual(self.parser.malformed, 3)
 
+    # A board reset part-way through a frame line leaves that partial line, then
+    # boot-ROM output read at the wrong baud, on the same line as the boot record.
+    PARTIAL = '<190>ESP32C5 wifi_sniffer: {"seq":53,"uptime_ms":3355,"'
+    ROM_NOISE = b"\xffx\x00x\x80x\x00xxx\x80\x80x\xf8\x80x\xf8".decode("utf-8", "replace")
+    BOOT = ('<190>ESP32C5 wifi_sniffer: {"event":"boot","chip":"esp32c5","band":"5GHz",'
+            '"fw":"spectre-sniffer","ver":"v2.0.4","baud":460800}')
+
+    def test_boot_line_after_a_partial_frame_and_rom_noise_is_kept(self):
+        recs = []
+        parser = Parser("sensor-test", on_lifecycle=recs.append)
+        self.assertIsNone(parser.parse_line(self.PARTIAL + self.ROM_NOISE + self.BOOT))
+        self.assertEqual([(r["kind"], r["payload"]["ver"]) for r in recs], [("boot", "v2.0.4")])
+        self.assertEqual((parser.band, parser.malformed), ("5GHz", 0))
+
+    def test_frame_after_stray_braces_is_parsed(self):
+        ev = self.parser.parse_line('x}{\ufffd{ <190>tag: {"type":"BEACON","ssid":"A"}')
+        self.assertEqual((ev.frame_type, ev.ssid), ("BEACON", "A"))
+
+    def test_extract_json_takes_the_outer_object_not_a_nested_one(self):
+        self.assertEqual(_extract_json('{"seq":5,"ch noise {"type":"X","csa":{"mode":1}}'),
+                         {"type": "X", "csa": {"mode": 1}})
+
+    def test_line_with_no_complete_object_is_still_malformed(self):
+        self.assertIsNone(self.parser.parse_line(self.PARTIAL + self.ROM_NOISE + '{"event":"bo'))
+        self.assertEqual(self.parser.malformed, 1)
+
+    def test_each_malformed_line_is_reported_to_the_callback(self):
+        seen = []
+        parser = Parser("sensor-test", on_malformed=seen.append)
+        for line in ("ESP-ROM:esp32c5 banner", '<190>tag: {"type":"BEACON",broken',
+                     '{"ch":1}', '{"type":"BEACON"}', self.BOOT):
+            parser.parse_line(line)
+        self.assertEqual(seen, ['<190>tag: {"type":"BEACON",broken', '{"ch":1}'])
+
     def test_json_array_is_not_an_object(self):
         self.assertIsNone(_extract_json("[1, 2]"))
         self.assertIsNone(_extract_json("} backwards {"))
