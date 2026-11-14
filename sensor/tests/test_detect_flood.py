@@ -12,9 +12,9 @@ def beacon(ts, i, band="2.4GHz"):
                  dst="FF:FF:FF:FF:FF:FF", bssid=mac, ssid=f"Net{i}")
 
 
-def probe(ts, i=0):
-    return frame(ts, type="PROBE_REQ", ch=6, rssi=-60,
-                 src=f"3A:00:00:00:00:{i % 256:02X}", dst="FF:FF:FF:FF:FF:FF")
+def probe(ts, i=0, band="2.4GHz", src=None):
+    return frame(ts, type="PROBE_REQ", ch=6, rssi=-60, band=band,
+                 src=src or f"3A:00:00:00:00:{i % 256:02X}", dst="FF:FF:FF:FF:FF:FF")
 
 
 class TestFloodRule(unittest.TestCase):
@@ -94,6 +94,47 @@ class TestFloodRule(unittest.TestCase):
         again = self.feed(probe(110 + i * 0.001, i) for i in range(120))
         later = self.feed(probe(140 + i * 0.001, i) for i in range(120))
         self.assertEqual((len(first), len(again), len(later)), (1, 0, 1))
+
+    def test_two_bands_under_probe_threshold_each_do_not_add_up(self):
+        evs = [probe(100 + i * 0.01, i, band="2.4GHz") for i in range(70)]
+        evs += [probe(100.005 + i * 0.01, i, band="5GHz") for i in range(70)]
+        self.assertEqual(self.feed(evs), [])
+
+    def test_probe_flood_on_one_band_is_counted_on_that_band(self):
+        [t] = self.feed(probe(100 + i * 0.01, i, band="5GHz") for i in range(120))
+        self.assertEqual((t.band, t.detail["probe_reqs"]), ("5GHz", 120))
+
+    def test_probe_cooldown_is_per_band(self):
+        a = self.feed(probe(100 + i * 0.001, i, band="2.4GHz") for i in range(120))
+        b = self.feed(probe(101 + i * 0.001, i, band="5GHz") for i in range(120))
+        self.assertEqual([t.band for t in a + b], ["2.4GHz", "5GHz"])
+
+    def test_probe_flood_names_the_top_source_not_the_last_one(self):
+        loud = "3A:11:11:11:11:11"
+        evs = [probe(100 + i * 0.01, src=loud) for i in range(100)]
+        evs += [probe(101 + i * 0.01, i) for i in range(20)]
+        [t] = self.feed(evs)
+        self.assertEqual(t.src, loud)
+        self.assertEqual(t.detail["top_sources"][0], [loud, 100])
+        self.assertEqual(t.detail["distinct_sources"], 21)
+
+    def test_top_sources_are_the_three_loudest_in_order(self):
+        evs = [probe(100 + i * 0.001, src="3A:AA:00:00:00:03") for i in range(20)]
+        evs += [probe(100.1 + i * 0.001, src="3A:AA:00:00:00:01") for i in range(50)]
+        evs += [probe(100.2 + i * 0.001, src="3A:AA:00:00:00:02") for i in range(40)]
+        evs += [probe(100.3 + i * 0.001, i) for i in range(10)]
+        [t] = self.feed(evs)
+        self.assertEqual(t.detail["top_sources"], [["3A:AA:00:00:00:01", 50],
+                                                   ["3A:AA:00:00:00:02", 40],
+                                                   ["3A:AA:00:00:00:03", 20]])
+
+    def test_sources_outside_the_window_are_not_counted(self):
+        old = "3A:BB:BB:BB:BB:BB"
+        evs = [probe(100 + i * 0.001, src=old) for i in range(100)]
+        evs += [probe(110 + i * 0.01, i) for i in range(120)]
+        [t] = self.feed(evs)
+        self.assertNotIn(old, [m for m, _ in t.detail["top_sources"]])
+        self.assertEqual(t.detail["probe_reqs"], 120)
 
     def test_window_change_is_picked_up_live(self):
         self.cfg.values["flood_window_seconds"] = 1
