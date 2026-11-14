@@ -179,8 +179,8 @@ Two services configured elegantly via a single `docker-compose.yml`:
 }}%%
 flowchart LR
     subgraph ESP["Hardware Sensors"]
-        E1["ESP32-C5 · 2.4G<br/>fw v2 · 460800"]
-        E2["ESP32-C5 · 5G<br/>fw v2 · 460800"]
+        E1["ESP32-C5 · 2.4G<br/>fw v2 · 921600"]
+        E2["ESP32-C5 · 5G<br/>fw v2 · 921600"]
     end
 
     subgraph Sensor["SPECTRE Sensor (Port 8100)"]
@@ -252,7 +252,7 @@ Docker. That is the whole bill of materials; nothing transmits.
 docker compose stop sensor
 python3 firmware/flash.py --port /dev/ttyUSB0 --band 2.4GHz --build fw-image
 python3 firmware/flash.py --port /dev/ttyUSB1 --band 5GHz   --build fw-image
-# .env: SERIAL_BAUD=460800
+# .env: SERIAL_BAUD=921600
 docker compose up -d sensor
 ```
 
@@ -275,7 +275,7 @@ Each UART line is a syslog-tagged JSON object:
   microsecond timestamps onto them.
 - `seq` counts frame lines since boot and resets on reboot; a gap is a line lost on the way to the host.
 - Band identification comes from the `{"event":"boot","band":"2.4GHz"}` line.
-- The v2 firmware (460800 baud) keeps every key of the original sniffer firmware (115200 baud) and only adds
+- The v2 firmware (921600 baud; 460800 up to 2.0.4) keeps every key of the original sniffer firmware (115200 baud) and only adds
   new ones, so both are ingested.
 
 > **Deep Dive:** Full schema and volume notes in **[docs/data-contract.md](docs/data-contract.md)**.
@@ -325,7 +325,7 @@ docker compose up -d --build
 Run the integrated simulator instead. Set `SPECTRE_SOURCE=sim` in your `.env`, comment out the `devices:` block in `docker-compose.yml`, then run `docker compose up -d --build`. The console fills with synthetic traffic on both bands and rotating attack scenarios. Details in [Running without hardware](#running-without-hardware).
 
 ### 📡 Boards attached?
-Flash them first: [docs/flashing.md](docs/flashing.md). Then set `SERIAL_BAUD=460800` in `.env` before `docker compose up`.
+Flash them first: [docs/flashing.md](docs/flashing.md). Then set `SERIAL_BAUD=921600` in `.env` before `docker compose up`.
 
 ---
 
@@ -338,7 +338,7 @@ Everything has a sensible default in `.env` (see `.env.example`) and can be chan
 | Key | Default Value | Description |
 |---|---|---|
 | `SERIAL_PORTS` | `/dev/ttyUSB0,/dev/ttyUSB1` | Target boards (band is auto-detected). |
-| `SERIAL_BAUD` | `115200` | Must match the firmware: `460800` for the v2 firmware, `115200` for the original. Any other value stops the sensor at startup. Read on every start, not seeded. |
+| `SERIAL_BAUD` | `115200` | Must match the firmware: `921600` for the v2 firmware (`460800` up to 2.0.4), `115200` for the original. Any other value stops the sensor at startup. Read on every start, not seeded. |
 | `SPECTRE_SOURCE` | `serial` | Run mode: `serial` · `sim` · `replay`. |
 | `WAZUH_HOST` / `WAZUH_PORT` | `10.0.0.20` / `514` | Target SIEM syslog destination. |
 | `RAW_RETENTION_HOURS` | `48` | Window for rolling raw-frame retention. |
@@ -471,8 +471,8 @@ reconnect without a board reset that line is never seen, so the parser falls bac
 number (`ch >= 32` → 5GHz). Reset the board with the sensor running to re-emit its boot event. On the
 v2 firmware a board's band is a setting: change it with `{"cmd":"set","band":"5GHz"}`.
 
-**The sensor exits right after starting.** `SERIAL_BAUD` is not a supported rate. Use `460800` for
-the v2 firmware or `115200` for the original.
+**The sensor exits right after starting.** `SERIAL_BAUD` is not a supported rate. Use `921600` for
+the v2 firmware (`460800` up to 2.0.4) or `115200` for the original.
 
 **Flashing problems.** See the troubleshooting table in [docs/flashing.md](docs/flashing.md#troubleshooting).
 

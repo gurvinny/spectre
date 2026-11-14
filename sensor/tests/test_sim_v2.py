@@ -435,7 +435,7 @@ class TestBoot(unittest.TestCase):
                                       "pin", "filter", "dedup", "ap_info_s", "fw", "ver",
                                       "elf_sha", "reset", "baud", "caps"])
         self.assertEqual((boot["band"], boot["channels"], boot["dwell_ms"], boot["baud"]),
-                         ("5GHz", "36-165", 200, 460800))
+                         ("5GHz", "36-165", 200, 921600))
         self.assertEqual(boot["reset"], "poweron")
         self.assertEqual(boot["caps"], ["counters", "cmd", "ap_info", "phy", "telemetry"])
         self.assertEqual(started, {"event": "sniffer_started", "ch": 36})

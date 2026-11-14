@@ -56,8 +56,8 @@ flowchart LR
     end
     AIR -. "receive only" .-> B1
     AIR -. "receive only" .-> B2
-    B1 -- "UART0 · 460800" --> U1
-    B2 -- "UART0 · 460800" --> U2
+    B1 -- "UART0 · 921600" --> U1
+    B2 -- "UART0 · 921600" --> U2
     U1 --> C
     U2 --> C
 
@@ -100,8 +100,8 @@ its `seq` counter.
    refuses to start a container whose listed device does not exist, so with one board attached, list only
    that one.
 
-3. Set `SERIAL_BAUD` to the firmware's speed: `460800` for the v2 firmware, `115200` for the original
-   sniffer firmware.
+3. Set `SERIAL_BAUD` to the firmware's speed: `921600` for the v2 firmware (`460800` up to 2.0.4),
+   `115200` for the original sniffer firmware.
 
 ### Stable port names
 
@@ -133,7 +133,7 @@ and restart the container.
 - **20/40 MHz receive.** The C5 decodes 802.11a/b/g/n/ac/ax at 20 MHz and 802.11n at 40 MHz. Wider
   80/160 MHz transmissions are not received; beacons and other management frames are sent at 20 MHz and are
   seen.
-- **UART bandwidth.** 460800 baud is about 46 KB/s per board. Frames beyond that are counted in
+- **UART bandwidth.** 921600 baud is about 92 KB/s per board. Frames beyond that are counted in
   `drop_queue`, not lost silently, and the Boards page shows the loss.
 
 _Author: gurvinny · Project: SPECTRE_

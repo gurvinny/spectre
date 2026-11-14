@@ -4,11 +4,12 @@ This is the wire format SPECTRE ingests. Two firmwares speak it:
 
 - the **original** sniffer firmware, verified live from the hardware (2.4GHz board on `/dev/ttyUSB0`,
   **115200** baud), and
-- the open **v2** firmware in [`firmware/`](../firmware/README.md), at **460800** baud, which keeps every
+- the open **v2** firmware in [`firmware/`](../firmware/README.md), at **921600** baud (460800 up to 2.0.4), which keeps every
   original key and only adds new ones.
 
 Either way the port is opened with DTR/RTS held low so the board does not reset on open. Set
-`SERIAL_BAUD` to the firmware's rate (`115200` or `460800`; `921600` is mapped but not yet soaked).
+`SERIAL_BAUD` to the firmware's rate (`115200`, `460800` or `921600`; 921600 is the 2.0.5
+default and is not yet soaked, see [#100](https://github.com/gurvinny/spectre/issues/100)).
 Any other value stops the sensor at startup: reading at the wrong speed produces garbage that would
 otherwise look like a quiet board.
 
@@ -188,7 +189,7 @@ a database from any earlier release upgrades in place, and a fresh one ends up w
 
 ~30 frames/sec per board in a normal environment (measured: 46 frames in 1.5s), so **~50–60/sec /
 ~4–5M/day** across both bands. At 115200 baud (~11.5 KB/s) and a ~190-byte line, the original
-firmware tops out at an estimated ~60 lines/sec per board; the v2 firmware's ceiling at 460800 will
+firmware tops out at an estimated ~60 lines/sec per board; the v2 firmware's ceiling at 921600 will
 be documented after a long soak. Raw frames are kept only in a rolling window and are **never**
 forwarded to Wazuh: only threats and summaries are.
 
