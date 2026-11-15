@@ -29,8 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TESTS = ROOT / "tests"
 
-MIN_TESTS = 463
-MIN_ASSERTIONS = 14930
+MIN_TESTS = 469
+MIN_ASSERTIONS = 14956
 
 _asserts = 0
 

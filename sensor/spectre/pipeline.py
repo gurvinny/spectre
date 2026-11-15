@@ -36,6 +36,8 @@ RECENT_RING = 2000        # frames kept in memory for the overview/heatmap
 FEED_BATCH_CAP = 300      # max frames pushed to the live feed per broadcast tick
 SUBSCRIBER_QUEUE_CAP = 50
 MALFORMED_WARN_S = 60.0   # at most one dropped-lifecycle-line warning per board per minute
+BAD_LINE_ROW_S = 10.0     # at most one stored bad_line row per board per 10 s; the rest are counted
+BAD_LINE_MAX_BYTES = 2048 # bytes of a bad line kept as hex; longer lines are cut
 
 
 def _is_random_mac(mac: Optional[str]) -> bool:
@@ -74,6 +76,8 @@ class Pipeline:
         self._sensor_last: dict[str, dict] = {}       # sensor_id -> {band,last_seen,frames}
         self.malformed_lines: dict[str, int] = {}     # sensor_id -> lines that did not parse
         self._malformed_warned: dict[str, float] = {}  # sensor_id -> last warning
+        self._bad_line_stored: dict[str, float] = {}   # sensor_id -> last bad_line row
+        self._bad_line_skipped: dict[str, int] = {}    # sensor_id -> bad lines since that row
 
         # threat rate-limiting
         self._threat_cooldown: dict[str, float] = {}
@@ -118,9 +122,13 @@ class Pipeline:
     def record_board_event(self, rec: dict) -> None:
         self._board_buffer.append(rec)
 
-    def record_malformed(self, sensor_id: str, line: str) -> None:
+    def record_malformed(self, sensor_id: str, line: str, raw: Optional[bytes] = None,
+                         band: str = "unknown") -> None:
         """Count a line from *sensor_id* that did not parse. A lost lifecycle line
-        (boot, telemetry) is logged, at most once a minute per board."""
+        (boot, telemetry) is logged, at most once a minute per board. The line's
+        bytes (*raw*, as read off the port; else *line* encoded) are stored as a
+        ``bad_line`` board event, at most one row per board every BAD_LINE_ROW_S,
+        with the lines in between counted in the next row's ``skipped``."""
         n = self.malformed_lines[sensor_id] = self.malformed_lines.get(sensor_id, 0) + 1
         t = now()
         last = self._malformed_warned.get(sensor_id)
@@ -128,6 +136,18 @@ class Pipeline:
             self._malformed_warned[sensor_id] = t
             log.warning("board %s dropped a lifecycle line that did not parse"
                         " (%d malformed lines so far)", sensor_id, n)
+        stored = self._bad_line_stored.get(sensor_id)
+        if stored is not None and t - stored < BAD_LINE_ROW_S:
+            self._bad_line_skipped[sensor_id] = self._bad_line_skipped.get(sensor_id, 0) + 1
+            return
+        self._bad_line_stored[sensor_id] = t
+        data = line.encode("utf-8") if raw is None else raw
+        self._board_buffer.append({
+            "received_at": t, "sensor_id": sensor_id, "band": band, "kind": "bad_line",
+            "payload": {"n": n, "bytes": len(data), "hex": data[:BAD_LINE_MAX_BYTES].hex(),
+                        "cut": len(data) > BAD_LINE_MAX_BYTES,
+                        "skipped": self._bad_line_skipped.pop(sensor_id, 0)},
+        })
 
     def record_ap_info(self, rec: dict) -> None:
         self._ap_info_buffer.append(rec)

@@ -3,6 +3,12 @@ TARGET = "spectre/reader.py"
 TESTS = "tests/test_ingest_v2.py"
 
 MUTATIONS = [
+    ('bad-line-bytes-not-kept',
+     '            self._line = line\n', '',
+     'test_serial_reader_stores_a_bad_line_byte_for_byte'),
+    ('bad-line-band-not-passed',
+     'self._line, self.parser.band)', 'self._line)',
+     'test_serial_reader_stores_a_bad_line_byte_for_byte'),
     ('460800-unmapped',
      '460800: termios.B460800, ',
      '',

@@ -520,6 +520,65 @@ class TestWiring(StoreCase):
         self.assertEqual(len(later.output), 1)
         self.assertIn("3 malformed", later.output[0])
 
+    def bad_lines(self):
+        self.pipe.flush()
+        return [r for r in self.store.board_events() if r["kind"] == "bad_line"]
+
+    def test_serial_reader_stores_a_bad_line_byte_for_byte(self):
+        reader = SerialReader("/dev/ttyUSB0", 921600, self.pipe)
+        raw = b'{"type":"BEACON","ch":6,\xb1"rssi":-60}\r'   # a flipped bit is not valid UTF-8
+        r, w = os.pipe()
+        try:
+            os.set_blocking(r, False)
+            reader._fd = r
+            os.write(w, BOOT_5.encode() + b"\n" + raw + b"\n")
+            reader._on_readable()
+        finally:
+            reader._fd = None
+            os.close(r)
+            os.close(w)
+        (row,) = self.bad_lines()
+        self.assertEqual((row["sensor_id"], row["band"]), ("ttyUSB0", "5GHz"))
+        self.assertEqual(bytes.fromhex(row["payload"]["hex"]), raw)
+        self.assertEqual(row["payload"], {"n": 1, "bytes": len(raw), "hex": raw.hex(),
+                                          "cut": False, "skipped": 0})
+
+    def test_a_bad_line_without_raw_bytes_stores_its_text(self):
+        self.pipe.record_malformed("sim-2.4GHz", '{"type":"BEACON",x')
+        (row,) = self.bad_lines()
+        self.assertEqual(bytes.fromhex(row["payload"]["hex"]), b'{"type":"BEACON",x')
+        self.assertEqual(row["band"], "unknown")
+
+    def test_a_long_bad_line_is_cut_at_the_cap(self):
+        from spectre.pipeline import BAD_LINE_MAX_BYTES
+        raw = b"{" + b"a" * (BAD_LINE_MAX_BYTES + 10)
+        self.pipe.record_malformed("ttyUSB0", raw.decode(), raw)
+        (row,) = self.bad_lines()
+        self.assertEqual(bytes.fromhex(row["payload"]["hex"]), raw[:BAD_LINE_MAX_BYTES])
+        self.assertEqual((row["payload"]["bytes"], row["payload"]["cut"]), (len(raw), True))
+
+    def test_a_bad_line_at_the_cap_is_kept_whole(self):
+        from spectre.pipeline import BAD_LINE_MAX_BYTES
+        raw = b"{" + b"a" * (BAD_LINE_MAX_BYTES - 1)
+        self.pipe.record_malformed("ttyUSB0", raw.decode(), raw)
+        (row,) = self.bad_lines()
+        self.assertEqual((bytes.fromhex(row["payload"]["hex"]), row["payload"]["cut"]), (raw, False))
+
+    def test_bad_line_rows_are_rate_limited_per_board_and_count_the_rest(self):
+        for t, sid in ((1000.0, "ttyUSB0"), (1001.0, "ttyUSB0"), (1009.9, "ttyUSB0"),
+                       (1001.0, "ttyUSB1"), (1010.0, "ttyUSB0"), (1020.0, "ttyUSB0")):
+            with mock.patch("spectre.pipeline.now", return_value=t):
+                self.pipe.record_malformed(sid, '{"type":"BEACON",x')
+        rows = [(r["received_at"], r["sensor_id"], r["payload"]["n"], r["payload"]["skipped"])
+                for r in self.bad_lines()]
+        self.assertEqual(sorted(rows), [(1000.0, "ttyUSB0", 1, 0), (1001.0, "ttyUSB1", 1, 0),
+                                        (1010.0, "ttyUSB0", 4, 2), (1020.0, "ttyUSB0", 5, 0)])
+
+    def test_noise_and_good_lines_store_no_bad_line(self):
+        reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)
+        self.feed(reader, "ets Jul 29 2019 rst:0x1\n" + BOOT_5 + "\n" + TELEMETRY + "\n")
+        self.assertEqual(self.bad_lines(), [])
+
     def test_serial_reader_routes_every_v2_line(self):
         reader = SerialReader("/dev/ttyUSB1", 460800, self.pipe)
         self.feed(reader, "\n".join([BOOT_5, AP_INFO, TELEMETRY, CLOCK, ACK_24, DEAUTH]) + "\n")

@@ -149,6 +149,7 @@ The v2 firmware adds these kinds, stored the same way:
 | `clock_sync` | `uptime_ms` and the 64-bit `mono_us`, for mapping `ts_us` onto host time |
 | `cmd_ack` | `cmd`, `id`, `ok`, `err`, and the resulting `config` |
 | `cmd` | Written by the sensor, not the board: one audit row per console command, with `id`, the `command` as sent, the `user`, and `sent` (bytes) or `error` |
+| `bad_line` | Written by the sensor, not the board: a line that held a `{` but did not parse, with `n` (the board's running `malformed_lines`), `bytes` (its length), `hex` (its bytes exactly as read off the port, up to 2048), `cut` (longer than that), and `skipped` (bad lines since the previous row, which were counted but not stored). At most one row per board every 10 s |
 
 ### `ap_info`
 
@@ -179,7 +180,7 @@ loss is `drop_queue + drop_overflow` over `rx_total` (`drop_short` and `drop_ded
 UART load is `uart_bps × 10` over the boot `baud` (8N1).
 `malformed_lines` counts the board's lines that held a `{` but did not parse, since the sensor
 started (in memory, not stored); a dropped lifecycle line is also logged, at most once a minute per
-board. A board reset part-way through a line leaves that partial line and the boot ROM's output (sent
+board, and the line itself is kept as a `bad_line` row. A board reset part-way through a line leaves that partial line and the boot ROM's output (sent
 at 115200, so unreadable at the app baud) in front of the boot record. The parser takes the first `{`
 from which the rest of the line parses, so the boot record is still read.
 

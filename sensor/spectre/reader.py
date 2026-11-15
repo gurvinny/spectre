@@ -92,10 +92,11 @@ class SerialReader:
                              on_malformed=self._on_malformed)
         self._fd: int | None = None
         self._buf = b""
+        self._line = b""   # bytes of the line being parsed, for a bad-line record
         self._send_lock = threading.Lock()
 
     def _on_malformed(self, line: str) -> None:
-        self.pipeline.record_malformed(self.sensor_id, line)
+        self.pipeline.record_malformed(self.sensor_id, line, self._line, self.parser.band)
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self._fd = _open_serial(self.path, self.baud)
@@ -119,6 +120,7 @@ class SerialReader:
             text = line.decode("utf-8", "replace").rstrip("\r")
             if not text:
                 continue
+            self._line = line
             event = self.parser.parse_line(text)
             if event is not None:
                 self.pipeline.ingest(event)
