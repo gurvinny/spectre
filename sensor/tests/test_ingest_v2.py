@@ -681,6 +681,9 @@ class TestReopen(unittest.TestCase):
             self.ptys[0] = (s1,)   # m1 is closed; s1 is closed by the reader
             self.run_for(0.1)
             self.assertEqual(self.reader._fd, s2)
+            # the parser would skip a glued fragment, but the bad-line record
+            # keeps raw bytes, so the half line must not be there at all
+            self.assertEqual(self.reader._buf, b"")
             self.assertEqual(self.reader.reopens, 1)
             self.assertEqual(self.reader._delay, 0.01)   # backoff starts over once back
             os.write(m2, (BOOT_5 + "\n").encode())
