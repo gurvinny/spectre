@@ -143,10 +143,12 @@ What changes with it:
   the next lines are refused at once until the host reads again, so a closed port cannot slow the capture
   path. When a reader opens the port, it first receives what the board buffered before the stall (up to
   8 KB, the oldest lines); the counters in the next `telemetry` line cover the gap.
-- **The port disappears on every chip reset** (`reboot` command, flash, crash) and comes back a second or
-  two later as a new device. The sensor's reader and `flash.py` both reopen the port when that happens. A
-  container given the device itself (`devices:`) would keep the dead one, so the sensor gets a
-  **directory of stable nodes** instead, below.
+- **The port can come back as a new device.** Seen after a flash, and expected when a cable is pulled or
+  the power drops. The resets tested so far keep the USB connection: a JTAG CPU reset and a reset through
+  the port's RTS/DTR lines both rebooted the board, and the next `boot` line arrived on the reader's
+  open port. Not yet checked: the `reboot` command and a crash. When the port does go away, the sensor's
+  reader and `flash.py` reopen it once it is back. A container given the device itself (`devices:`)
+  would keep the dead one, so the sensor gets a **directory of stable nodes** instead, below.
 - **Opening the port does not reset the board.** Checked on ESP32-C5 boards: a plain open (DTR and RTS
   asserted) and the reader's recipe (both held low) leave the board running, with no re-enumeration.
 

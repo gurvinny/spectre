@@ -2,7 +2,8 @@
 # Keep one stable device node per ESP32-C5 native USB port, named by the chip
 # MAC the port reports as its USB serial number: /dev/espc5/D0CF13XXXXXX.
 #
-# The port is a new device after every chip reset or flash. A container that
+# The port can come back as a new device (after a flash, a cable pulled, a
+# power loss). A container that
 # binds this directory (docker-compose.usb.yml) sees each node come back under
 # the same name; a container given a single device sees it go stale.
 #

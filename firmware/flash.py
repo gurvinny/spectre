@@ -23,8 +23,9 @@ each see half the lines.
 
 The port can be a UART bridge (``ttyUSB*``) or, from 2.1.0, the board's native
 USB-Serial-JTAG port (a ``ttyACM*`` CDC device, found by its USB ids). On the
-native port esptool resets with ``--before usb-reset``, the port disappears on
-every reset and is reopened when it is back, and the boot line must say
+native port esptool resets with ``--before usb-reset``, a port that disappears
+(the board re-enumerating after the flash) is reopened when it is back, and the
+boot line must say
 ``"link":"usb"``.
 
 Usage:
@@ -481,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
             subprocess.run(esptool_argv(args.port, image, usb=usb), check=True,
                            stdout=sys.stderr)
         if usb:
-            # the reset after flashing re-enumerates the port; wait for it
+            # the reset after flashing can re-enumerate the port; wait for it
             fd = wait_open(args.port, args.baud, REOPEN_TIMEOUT_S)
             link = SerialLink(fd, reopen=lambda t: wait_open(args.port, args.baud, t))
         else:

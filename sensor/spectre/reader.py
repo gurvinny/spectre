@@ -13,9 +13,9 @@ The v2 firmware runs at 921600 baud (460800 up to 2.0.4) and accepts one-line
 JSON commands; :meth:`SerialReader.send` writes them on the same descriptor.
 
 From 2.1.0 a board can stream over its native USB port instead (a ``ttyACM``
-CDC device, no baud rate). That port disappears whenever the chip resets or is
-flashed and comes back as a new device, so a reader that sees its port hang up
-closes it and keeps reopening the same path until the board is back.
+CDC device, no baud rate). That port can go away and come back as a new device
+(after a flash, a cable pulled, a power loss), so a reader that sees its port
+hang up closes it and keeps reopening the same path until the board is back.
 
 Author: gurvinny
 Project: SPECTRE
@@ -54,8 +54,8 @@ _BAUD_MAP = {
 # longer line is cut off and acked "line too long".
 MAX_COMMAND_BYTES = 254
 SEND_TIMEOUT_S = 2.0
-# Reopen backoff after a port goes away: a USB board re-enumerates within a
-# second or two of a reset, a flash takes longer.
+# Reopen backoff after a port goes away: try soon, then back off to a slow
+# poll while the board is away (being flashed, unplugged).
 REOPEN_FIRST_S = 0.5
 REOPEN_MAX_S = 5.0
 _HANGUP = select.POLLHUP | select.POLLERR | select.POLLNVAL

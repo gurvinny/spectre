@@ -3,8 +3,9 @@
 #   docker compose -f docker-compose.yml -f docker-compose.usb.yml up -d
 #   (or COMPOSE_FILE=docker-compose.yml:docker-compose.usb.yml in .env)
 #
-# A native USB port is a new device after every chip reset or flash, so a
-# single device mapping goes stale the first time a board reboots. Instead the
+# A native USB port can come back as a new device (seen after a flash; a cable
+# pulled or a power loss does the same), and a single device mapping then goes
+# stale. Instead the
 # host keeps one stable node per board in a directory (see docs/hardware.md for
 # the udev rule that does it), the directory is bind-mounted, and the device
 # cgroup admits CDC-ACM ttys (major 166) only. The raw USB bus (/dev/bus/usb)
