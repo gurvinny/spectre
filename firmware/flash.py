@@ -21,10 +21,17 @@ plan. So after flashing, this tool talks to the firmware itself:
 Any mismatch exits non-zero. Stop the sensor first: two readers on one port
 each see half the lines.
 
+The port can be a UART bridge (``ttyUSB*``) or, from 2.1.0, the board's native
+USB-Serial-JTAG port (a ``ttyACM*`` CDC device, found by its USB ids). On the
+native port esptool resets with ``--before usb-reset``, the port disappears on
+every reset and is reopened when it is back, and the boot line must say
+``"link":"usb"``.
+
 Usage:
   python3 firmware/flash.py --port /dev/ttyUSB0 --band 2.4GHz
   python3 firmware/flash.py --port /dev/ttyUSB1 --band 5GHz
   python3 firmware/flash.py --port /dev/ttyUSB0 --band 2.4GHz --verify-only
+  python3 firmware/flash.py --port /dev/ttyACM0 --band 2.4GHz
 
 Standard library only; esptool is fetched by ``uvx``.
 
@@ -39,6 +46,7 @@ import hashlib
 import json
 import os
 import select
+import stat
 import struct
 import subprocess
 import sys
@@ -63,6 +71,9 @@ SETTLE_S = 1.5
 ACK_TIMEOUT_S = 5.0
 BOOT_TIMEOUT_S = 15.0
 SOAK_S = 10.0
+REOPEN_TIMEOUT_S = 15.0    # a native USB port is back within a few seconds of a reset
+USB_JTAG_IDS = ("303a", "1001")   # Espressif USB-Serial-JTAG, idVendor/idProduct
+SYSFS = Path("/sys")
 
 _IMAGE_MAGIC = 0xE9
 _DESC_MAGIC = 0xABCD5432
@@ -177,10 +188,13 @@ def load_image(build: Path) -> Image:
 
 
 def esptool_argv(port: str, image: Image, baud: int = FLASH_BAUD,
-                 esptool: str = ESPTOOL) -> list[str]:
+                 esptool: str = ESPTOOL, usb: bool = False) -> list[str]:
+    # esptool picks its USB reset from the port's USB ids, which it cannot find
+    # for a port under another name (a /dev/serial/by-id link, a node made by
+    # udev elsewhere); say it outright.
     argv = ["uvx", "--from", esptool, "esptool", "--chip", "esp32c5",
             "--port", port, "--baud", str(baud),
-            "--before", "default-reset", "--after", "hard-reset",
+            "--before", "usb-reset" if usb else "default-reset", "--after", "hard-reset",
             *([] if image.stub else ["--no-stub"]),
             "write-flash", *image.options]
     for offset, rel in image.parts:
@@ -203,7 +217,7 @@ def parse_line(text: str) -> dict | None:
 
 
 def check_boot(boot: dict, desc: AppDesc, band: str, plan: dict | None,
-               baud: int = APP_BAUD) -> list[str]:
+               baud: int = APP_BAUD, link: str | None = None) -> list[str]:
     """Every way *boot* differs from what was flashed and configured."""
     problems = []
     if boot.get("fw") != FW_NAME:
@@ -219,6 +233,8 @@ def check_boot(boot: dict, desc: AppDesc, band: str, plan: dict | None,
         problems.append(f"band is {boot.get('band')!r}, expected {band!r}")
     if boot.get("baud") != baud:
         problems.append(f"baud is {boot.get('baud')!r}, expected {baud}")
+    if link is not None and boot.get("link") != link:
+        problems.append(f"link is {boot.get('link')!r}, expected {link!r}")
     for key, want in (plan or {}).items():
         if key != "band" and boot.get(key) != want:
             problems.append(f"{key} is {boot.get(key)!r}, acknowledged {want!r}")
@@ -226,6 +242,38 @@ def check_boot(boot: dict, desc: AppDesc, band: str, plan: dict | None,
 
 
 # ---- serial -----------------------------------------------------------------
+
+def usb_port(path: str, sysfs: Path = SYSFS) -> bool:
+    """Whether *path* is a board's native USB-Serial-JTAG port, by its USB ids.
+
+    Works on the device number, so any name for the node will do."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    if not stat.S_ISCHR(st.st_mode):
+        return False
+    dev = sysfs / "dev" / "char" / f"{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}"
+    # .../usbX/X-Y/X-Y:1.0/ttyACM0: the ids sit on the USB device, two levels up
+    usb = dev.resolve() / "device" / ".."
+    try:
+        ids = ((usb / "idVendor").read_text().strip(), (usb / "idProduct").read_text().strip())
+    except OSError:
+        return False
+    return ids == USB_JTAG_IDS
+
+
+def wait_open(path: str, baud: int, timeout: float, clock=time.monotonic,
+              sleep=time.sleep) -> int:
+    """open_port(*path*), retried while the node is away (USB re-enumerating)."""
+    deadline = clock() + timeout
+    while True:
+        try:
+            return open_port(path, baud)
+        except OSError:
+            if clock() >= deadline:
+                raise
+            sleep(0.2)
 
 def open_port(path: str, baud: int = APP_BAUD) -> int:
     """Open *path* raw N-8-1 with DTR/RTS held low, so opening does not reset."""
@@ -247,12 +295,38 @@ def open_port(path: str, baud: int = APP_BAUD) -> int:
 
 
 class SerialLink:
-    """Line-oriented access to an open port."""
+    """Line-oriented access to an open port.
 
-    def __init__(self, fd: int) -> None:
+    With *reopen* (``reopen(timeout) -> fd``), a port that hangs up (a native
+    USB board resetting) is closed and opened again within the same timeout;
+    a half line from before is dropped, not joined to the next one."""
+
+    def __init__(self, fd: int, reopen=None) -> None:
         self.fd = fd
         self._buf = b""
         self.clock = time.monotonic
+        self.reopen = reopen
+        self.reopens = 0
+
+    def _hung_up(self) -> bool:
+        p = select.poll()
+        p.register(self.fd, select.POLLIN)
+        return any(ev & (select.POLLHUP | select.POLLERR) for _, ev in p.poll(0))
+
+    def _come_back(self, left: float) -> bool:
+        if self.reopen is None:
+            return False
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+        self._buf = b""
+        try:
+            self.fd = self.reopen(max(left, 0.0))
+        except OSError:
+            return False
+        self.reopens += 1
+        return True
 
     def readline(self, timeout: float) -> str | None:
         deadline = self.clock() + timeout
@@ -262,8 +336,16 @@ class SerialLink:
                 return None
             ready, _, _ = select.select([self.fd], [], [], left)
             if ready:
-                chunk = os.read(self.fd, 4096)
+                try:
+                    chunk = os.read(self.fd, 4096)
+                except BlockingIOError:
+                    continue
+                except OSError:
+                    chunk = None          # EIO after a hangup
                 if not chunk:
+                    if chunk is None or self._hung_up():
+                        if self._come_back(deadline - self.clock()):
+                            continue
                     return None
                 self._buf += chunk
         line, self._buf = self._buf.split(b"\n", 1)
@@ -337,7 +419,8 @@ def soak(link, seconds: float) -> dict:
 def configure_and_verify(link, desc: AppDesc, band: str, keep_config: bool = False,
                          settle: float = SETTLE_S,
                          boot_timeout: float = BOOT_TIMEOUT_S,
-                         soak_s: float = SOAK_S, baud: int = APP_BAUD) -> dict:
+                         soak_s: float = SOAK_S, baud: int = APP_BAUD,
+                         want_link: str | None = None) -> dict:
     """Set the band (and default plan), reboot, and check the new boot line."""
     if band not in BANDS:
         raise FlashError(f"band must be one of {', '.join(BANDS)}")
@@ -355,12 +438,13 @@ def configure_and_verify(link, desc: AppDesc, band: str, keep_config: bool = Fal
     boot = wait_for(link, lambda o: o.get("event") == "boot", boot_timeout)
     if boot is None:
         raise FlashError(f"no boot line within {boot_timeout:.0f} s of the reboot")
-    problems = check_boot(boot, desc, band, plan, baud)
+    problems = check_boot(boot, desc, band, plan, baud, want_link)
     if problems:
         raise FlashError("; ".join(problems))
     if wait_for(link, lambda o: o.get("event") == "sniffer_started", boot_timeout) is None:
         raise FlashError("booted, but the sniffer never started")
-    result = {"band": band, "baud": baud, "plan": plan, "reset": boot.get("reset")}
+    result = {"band": band, "baud": baud, "link": boot.get("link"), "plan": plan,
+              "reset": boot.get("reset")}
     if soak_s > 0:
         result["soak"] = s = soak(link, soak_s)
         if s["bad_lines"] or s["seq_gaps"]:
@@ -392,15 +476,24 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     try:
         image = load_image(args.build)
+        usb = usb_port(args.port)
         if not args.verify_only:
-            subprocess.run(esptool_argv(args.port, image), check=True, stdout=sys.stderr)
-        fd = open_port(args.port, args.baud)
+            subprocess.run(esptool_argv(args.port, image, usb=usb), check=True,
+                           stdout=sys.stderr)
+        if usb:
+            # the reset after flashing re-enumerates the port; wait for it
+            fd = wait_open(args.port, args.baud, REOPEN_TIMEOUT_S)
+            link = SerialLink(fd, reopen=lambda t: wait_open(args.port, args.baud, t))
+        else:
+            fd = open_port(args.port, args.baud)
+            link = SerialLink(fd)
         try:
-            result = configure_and_verify(SerialLink(fd), image.desc, args.band,
+            result = configure_and_verify(link, image.desc, args.band,
                                           keep_config=args.keep_config,
-                                          soak_s=args.soak, baud=args.baud)
+                                          soak_s=args.soak, baud=args.baud,
+                                          want_link="usb" if usb else None)
         finally:
-            os.close(fd)
+            os.close(link.fd if usb else fd)
     except (FlashError, OSError, subprocess.CalledProcessError) as e:
         print(f"FAILED: {e}", file=sys.stderr)
         return 1

@@ -1,0 +1,23 @@
+# SPECTRE: boards on their native USB port (firmware 2.1.0 and later)
+#
+#   docker compose -f docker-compose.yml -f docker-compose.usb.yml up -d
+#   (or COMPOSE_FILE=docker-compose.yml:docker-compose.usb.yml in .env)
+#
+# A native USB port is a new device after every chip reset or flash, so a
+# single device mapping goes stale the first time a board reboots. Instead the
+# host keeps one stable node per board in a directory (see docs/hardware.md for
+# the udev rule that does it), the directory is bind-mounted, and the device
+# cgroup admits CDC-ACM ttys (major 166) only. The raw USB bus (/dev/bus/usb)
+# is never passed in: with the USB JTAG eFuse unburned, anything holding the
+# bus can halt the chip and read or rewrite its flash.
+#
+# Point SERIAL_PORTS at the nodes, e.g.
+#   SERIAL_PORTS=/dev/espc5/<MAC-of-2.4GHz-board>,/dev/espc5/<MAC-of-5GHz-board>
+
+services:
+  sensor:
+    devices: !reset []
+    device_cgroup_rules:
+      - "c 166:* rmw"
+    volumes:
+      - ${SPECTRE_USB_DIR:-/dev/espc5}:${SPECTRE_USB_DIR:-/dev/espc5}

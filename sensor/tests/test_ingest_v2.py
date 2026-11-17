@@ -1,6 +1,7 @@
 """Firmware v2 ingest: typed frame fields, ap_info routing, schema migration,
 high baud rates and the reader's write path. Author: gurvinny"""
 import asyncio
+import contextlib
 import os
 import select
 import sqlite3
@@ -632,6 +633,102 @@ class TestBaud(unittest.TestCase):
         finally:
             os.close(master)
             os.close(slave)
+
+
+class TestReopen(unittest.TestCase):
+    """A native USB board's port vanishes on every reset; the reader must come back."""
+
+    def setUp(self):
+        self.loop = asyncio.new_event_loop()
+        self.pipe = mock.Mock()
+        self.ptys = []
+        fast = mock.patch.multiple(reader_mod, REOPEN_FIRST_S=0.01, REOPEN_MAX_S=0.04)
+        fast.start()
+        self.addCleanup(fast.stop)
+        self.reader = SerialReader("/dev/espc5/BOARD", 921600, pipeline=self.pipe)
+
+    def tearDown(self):
+        self.reader.stop(self.loop)
+        for fd in [fd for pair in self.ptys for fd in pair]:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        self.loop.close()
+
+    def pty(self):
+        master, slave = os.openpty()
+        tty.setraw(slave)
+        self.ptys.append((master, slave))
+        return master, slave
+
+    def run_for(self, seconds):
+        self.loop.run_until_complete(asyncio.sleep(seconds))
+
+    def boots(self):
+        return [c.args for c in self.pipe.record_board_event.call_args_list]
+
+    def test_a_hung_up_port_is_reopened_and_streams_again(self):
+        m1, s1 = self.pty()
+        m2, s2 = self.pty()
+        with mock.patch.object(reader_mod, "_open_serial", side_effect=[s1, s2]):
+            self.reader.start(self.loop)
+            os.write(m1, (BOOT_5 + "\n").encode())
+            self.run_for(0.05)
+            self.assertEqual(len(self.boots()), 1)
+            # half a line, then the board resets: the half must not join the next line
+            os.write(m1, b'{"event":"bo')
+            self.run_for(0.02)
+            os.close(m1)
+            self.ptys[0] = (s1,)   # m1 is closed; s1 is closed by the reader
+            self.run_for(0.1)
+            self.assertEqual(self.reader._fd, s2)
+            self.assertEqual(self.reader.reopens, 1)
+            self.assertEqual(self.reader._delay, 0.01)   # backoff starts over once back
+            os.write(m2, (BOOT_5 + "\n").encode())
+            self.run_for(0.05)
+        self.assertEqual(len(self.boots()), 2)
+        self.pipe.record_malformed.assert_not_called()
+
+    def test_a_port_missing_at_start_is_retried_until_it_appears(self):
+        m, s = self.pty()
+        gone = FileNotFoundError(2, "No such file or directory")
+        with mock.patch.object(reader_mod, "_open_serial", side_effect=[gone, gone, s]):
+            self.reader.start(self.loop)
+            self.assertIsNone(self.reader._fd)
+            self.run_for(0.2)
+            self.assertEqual(self.reader._fd, s)
+            os.write(m, (BOOT_5 + "\n").encode())
+            self.run_for(0.05)
+        self.assertEqual(len(self.boots()), 1)
+
+    def test_a_quiet_port_is_not_mistaken_for_a_hangup(self):
+        m, s = self.pty()
+        with mock.patch.object(reader_mod, "_open_serial", return_value=s):
+            self.reader.start(self.loop)
+        with mock.patch.object(reader_mod.os, "read", return_value=b""):
+            self.reader._on_readable()
+        self.assertEqual(self.reader._fd, s)
+        self.assertIsNone(self.reader._retry)
+
+    def test_backoff_doubles_up_to_the_cap(self):
+        gone = FileNotFoundError(2, "No such file or directory")
+        with mock.patch.object(reader_mod, "_open_serial", side_effect=gone):
+            self.reader.start(self.loop)
+            delays = []
+            for _ in range(4):
+                delays.append(self.reader._delay)
+                self.reader._retry.cancel()
+                self.reader._reopen()
+        self.assertEqual(delays, [0.02, 0.04, 0.04, 0.04])
+
+    def test_stop_cancels_a_pending_reopen(self):
+        m, s = self.pty()
+        opener = mock.Mock(side_effect=[FileNotFoundError(2, "gone"), s])
+        with mock.patch.object(reader_mod, "_open_serial", opener):
+            self.reader.start(self.loop)
+            self.reader.stop(self.loop)
+            self.run_for(0.1)
+        self.assertEqual(opener.call_count, 1)
+        self.assertIsNone(self.reader._fd)
 
 
 class TestSend(unittest.TestCase):

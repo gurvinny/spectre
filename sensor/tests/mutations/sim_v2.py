@@ -257,5 +257,20 @@ MUTATIONS = [
      'sim = Simulator(args.band, fw=args.fw)',
      'sim = Simulator(args.band)',
      'test_cli_can_still_print_v1'),
+    # ── 2.1.0 link ─────────────────────────────────────────────────────
+    ("sim-link-cap-missing", 'boot["caps"] = list(CAPS) + (["link"] if self.link else [])',
+     'boot["caps"] = list(CAPS)', "test_a_2_1_board_names_its_link_like_the_firmware"),
+    ("sim-link-after-caps", '        if self.link:\n            boot["link"] = self.link\n        boot["caps"] = list(CAPS) + (["link"] if self.link else [])',
+     '        boot["caps"] = list(CAPS) + (["link"] if self.link else [])\n        if self.link:\n            boot["link"] = self.link',
+     "test_a_2_1_board_names_its_link_like_the_firmware"),
+    ("sim-usb-bytes-on-uart", '"uart_bps": 0 if self.link == "usb" else bps', '"uart_bps": bps',
+     "test_usb_telemetry_moves_the_bytes_to_usb_bps"),
+    ("sim-uart-bytes-on-usb", '"usb_bps": bps if self.link == "usb" else 0', '"usb_bps": bps',
+     "test_2_1_on_uart_keeps_uart_bps"),
+    ("sim-drop-usb-fixed", '"drop_usb": self.drop_usb,', '"drop_usb": 0,',
+     "test_usb_telemetry_moves_the_bytes_to_usb_bps"),
+    ("sim-link-keys-always", '            if self.link:\n                tel.update({"link"', '            if True:\n                tel.update({"link"',
+     "test_2_0_telemetry_has_no_link_keys"),
+    ("sim-any-link", 'link not in LINKS)', 'link is None)', "test_an_unknown_link_or_v1_with_a_link_is_refused"),
 ]
 SURVIVORS = {}

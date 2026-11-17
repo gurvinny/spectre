@@ -135,5 +135,20 @@ MUTATIONS = [
     ('board-malformed-lookup-ignores-id',
      'malformed.get(sid, 0))', 'sum(malformed.values()))',
      'test_lists_malformed_lines_per_board'),
+    # ---- 2.1.0 link ----
+    ("usb-keeps-uart-load", 'if link != "usb":\n        uart_load', 'if True:\n        uart_load',
+     "test_usb_telemetry_names_the_link_and_has_no_uart_load"),
+    ("uart-link-loses-uart-load", 'if link != "usb":\n        uart_load', 'if link is None:\n        uart_load',
+     "test_uart_link_keeps_the_uart_load"),
+    ("any-link-accepted", 'if tel.get("link") in ("usb", "uart") else None', 'if tel.get("link") else None',
+     "test_an_unknown_link_or_bad_stack_value_is_ignored"),
+    ("drop-usb-unread", '"drop_usb": _num(tel.get("drop_usb")),', '"drop_usb": None,',
+     "test_usb_telemetry_names_the_link_and_has_no_uart_load"),
+    ("usb-bps-from-uart", '"usb_bps": _num(tel.get("usb_bps"))', '"usb_bps": _num(tel.get("uart_bps"))',
+     "test_usb_telemetry_names_the_link_and_has_no_uart_load"),
+    ("stack-values-unchecked", "{k: _num(v) for k, v in stacks.items()}", "dict(stacks)",
+     "test_an_unknown_link_or_bad_stack_value_is_ignored"),
+    ("boot-link-not-on-card", '"reset", "baud", "link", "caps")', '"reset", "baud", "caps")',
+     "test_summary_carries_firmware_plan_and_last_seen"),
 ]
 SURVIVORS = {}

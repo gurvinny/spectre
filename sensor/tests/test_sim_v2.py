@@ -398,6 +398,33 @@ class TestTicks(unittest.TestCase):
         self.assertIn(tel["temp_dc"], range(350, 500))
         self.assertEqual(tel["emitted"], len(frames(lines)) + 20)
 
+    def test_usb_telemetry_moves_the_bytes_to_usb_bps(self):
+        s = Simulator("2.4GHz", seed=7, clock=Clock(), link="usb")
+        clock = s.clock
+        first = s.ticks()
+        lines = run_bg(s, 100)
+        s.drop_usb = 3
+        clock.advance(10)
+        (tel,) = events(s.ticks(), "telemetry")
+        sent = sum(len(ln) + 1 for ln in first + lines)
+        self.assertEqual((tel["uart_bps"], tel["usb_bps"]), (0, sent // 10))
+        self.assertEqual((tel["link"], tel["drop_usb"]), ("usb", 3))
+        self.assertEqual(set(tel["stack_min"]), {"emit", "hop", "cmd_uart", "cmd_usb"})
+
+    def test_2_1_on_uart_keeps_uart_bps(self):
+        s = Simulator("2.4GHz", seed=7, clock=Clock(), link="uart")
+        run_bg(s, 50)
+        s.clock.advance(10)
+        (tel,) = events(s.ticks(), "telemetry")
+        self.assertGreater(tel["uart_bps"], 0)
+        self.assertEqual((tel["link"], tel["usb_bps"]), ("uart", 0))
+
+    def test_2_0_telemetry_has_no_link_keys(self):
+        s, clock = sim()
+        clock.advance(10)
+        (tel,) = events(s.ticks(), "telemetry")
+        self.assertFalse({"link", "usb_bps", "drop_usb", "stack_min"} & set(tel))
+
     def test_clock_sync_maps_uptime_to_microseconds(self):
         s, clock = sim()
         clock.advance(10.0004)
@@ -439,6 +466,19 @@ class TestBoot(unittest.TestCase):
         self.assertEqual(boot["reset"], "poweron")
         self.assertEqual(boot["caps"], ["counters", "cmd", "ap_info", "phy", "telemetry"])
         self.assertEqual(started, {"event": "sniffer_started", "ch": 36})
+
+    def test_a_2_1_board_names_its_link_like_the_firmware(self):
+        # the key order of firmware/test/test_line.c test_lifecycle_lines
+        s = Simulator("5GHz", seed=5, clock=Clock(), link="usb")
+        boot = body(s.boot_lines()[0])
+        self.assertEqual(list(boot)[-3:], ["baud", "link", "caps"])
+        self.assertEqual(boot["link"], "usb")
+        self.assertEqual(boot["caps"], ["counters", "cmd", "ap_info", "phy", "telemetry", "link"])
+
+    def test_an_unknown_link_or_v1_with_a_link_is_refused(self):
+        for kw in ({"link": "spi"}, {"link": "usb", "fw": "v1"}):
+            with self.assertRaises(ValueError):
+                Simulator("2.4GHz", seed=1, clock=Clock(), **kw)
 
     def test_a_pinned_board_starts_on_its_pin(self):
         s, _ = sim()

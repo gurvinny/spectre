@@ -1,0 +1,8 @@
+# ESP32-C5 native USB-Serial-JTAG ports -> /dev/espc5/<MAC> (see espc5-node).
+# Install: copy espc5-node to /usr/local/sbin/, this file to /etc/udev/rules.d/,
+# then `udevadm control --reload && udevadm trigger --subsystem-match=tty`.
+SUBSYSTEM=="tty", ACTION=="add", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", \
+  RUN+="/usr/local/sbin/espc5-node add $attr{serial} $major $minor"
+# On remove the sysfs attributes are gone; the udev database still has the ids.
+SUBSYSTEM=="tty", ACTION=="remove", ENV{ID_VENDOR_ID}=="303a", ENV{ID_MODEL_ID}=="1001", \
+  RUN+="/usr/local/sbin/espc5-node remove $env{ID_SERIAL_SHORT}"

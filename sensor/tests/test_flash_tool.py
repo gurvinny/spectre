@@ -316,6 +316,128 @@ class CheckBootTests(unittest.TestCase):
         self.assertGreaterEqual(len(problems), 5)
 
 
+class UsbLinkTests(unittest.TestCase):
+    """2.1.0 on the native USB-Serial-JTAG port."""
+
+    def test_the_boot_must_name_the_link_asked_for(self):
+        d, plan = desc(), DEFAULTS["5GHz"]
+        usb = {**boot_line("5GHz"), "link": "usb"}
+        self.assertEqual(flash.check_boot(usb, d, "5GHz", plan, link="usb"), [])
+        self.assertEqual(flash.check_boot(usb, d, "5GHz", plan), [])     # UART: not asked
+        problems = flash.check_boot(boot_line("5GHz"), d, "5GHz", plan, link="usb")
+        self.assertEqual(problems, ["link is None, expected 'usb'"])
+        problems = flash.check_boot({**usb, "link": "uart"}, d, "5GHz", plan, link="usb")
+        self.assertEqual(problems, ["link is 'uart', expected 'usb'"])
+
+    def test_esptool_resets_a_usb_port_the_usb_way(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        build = Path(tmp.name)
+        (build / "spectre-sniffer.bin").write_bytes(app_image())
+        (build / "flash_args").write_text("--flash_mode dio\n0x10000 spectre-sniffer.bin\n")
+        img = flash.load_image(build)
+        argv = flash.esptool_argv("/dev/ttyACM0", img, usb=True)
+        self.assertEqual(argv[argv.index("--before") + 1], "usb-reset")
+        self.assertEqual(argv[argv.index("--after") + 1], "hard-reset")
+        argv = flash.esptool_argv("/dev/ttyUSB0", img)
+        self.assertEqual(argv[argv.index("--before") + 1], "default-reset")
+
+    def sysfs(self, path, ids):
+        """A sysfs tree for *path*'s device number shaped like the kernel's:
+        dev/char/M:m -> .../1-4/1-4:1.0/tty/ttyACM0, whose device is 1-4:1.0."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        usbdev = root / "devices" / "usb1" / "1-4"
+        tty = usbdev / "1-4:1.0" / "tty" / "ttyACM0"
+        tty.mkdir(parents=True)
+        (tty / "device").symlink_to("../..")
+        (usbdev / "idVendor").write_text(ids[0] + "\n")
+        (usbdev / "idProduct").write_text(ids[1] + "\n")
+        st = os.stat(path)
+        (root / "dev" / "char").mkdir(parents=True)
+        (root / "dev" / "char" / f"{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}").symlink_to(tty)
+        return root
+
+    def pty(self):
+        master, slave = os.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        return master, slave
+
+    def test_a_usb_port_is_known_by_its_ids_under_any_name(self):
+        _, slave = self.pty()
+        name = os.ttyname(slave)
+        self.assertTrue(flash.usb_port(name, self.sysfs(name, ("303a", "1001"))))
+        link = Path(tempfile.mkdtemp()) / "BOARD"
+        self.addCleanup(lambda: (link.unlink(), link.parent.rmdir()))
+        link.symlink_to(name)                       # a by-id style name
+        self.assertTrue(flash.usb_port(str(link), self.sysfs(name, ("303a", "1001"))))
+
+    def test_a_uart_bridge_or_a_non_device_is_not_a_usb_port(self):
+        _, slave = self.pty()
+        name = os.ttyname(slave)
+        self.assertFalse(flash.usb_port(name, self.sysfs(name, ("1a86", "7523"))))   # CH340
+        self.assertFalse(flash.usb_port(name, self.sysfs(name, ("1a86", "1001"))))   # vendor
+        self.assertFalse(flash.usb_port(name, Path(tempfile.mkdtemp())))  # no sysfs entry
+        with tempfile.NamedTemporaryFile() as f:                 # a zero-byte file
+            # even with sysfs answering for its (0:0) device number
+            self.assertFalse(flash.usb_port(f.name, self.sysfs(f.name, ("303a", "1001"))))
+        self.assertFalse(flash.usb_port("/nonexistent/ttyACM9"))
+
+    def test_wait_open_retries_until_the_port_is_back(self):
+        t = [0.0]
+        gone = FileNotFoundError(2, "No such file or directory")
+        with mock.patch.object(flash, "open_port", side_effect=[gone, gone, 42]) as op:
+            fd = flash.wait_open("/dev/ttyACM0", 921600, 5.0, clock=lambda: t[0],
+                                 sleep=lambda d: t.__setitem__(0, t[0] + d))
+        self.assertEqual((fd, op.call_count), (42, 3))
+
+    def test_wait_open_gives_up_at_the_timeout(self):
+        t = [0.0]
+        gone = FileNotFoundError(2, "No such file or directory")
+        # a bounded supply: a wait that never gives up runs out and fails
+        with mock.patch.object(flash, "open_port", side_effect=[gone] * 20) as op:
+            with self.assertRaises(FileNotFoundError):
+                flash.wait_open("/dev/ttyACM0", 921600, 1.0, clock=lambda: t[0],
+                                sleep=lambda d: t.__setitem__(0, t[0] + d))
+        self.assertEqual(op.call_count, 6)          # t = 0, 0.2 ... 1.0
+
+    def test_a_hung_up_port_is_reopened_and_a_half_line_dropped(self):
+        import tty
+        m1, s1 = os.openpty()
+        m2, s2 = self.pty()
+        for fd in (s1, s2):
+            tty.setraw(fd)
+        link = flash.SerialLink(s1, reopen=lambda timeout: s2)
+        os.write(m1, b'{"event":"bo')
+        self.assertIsNone(link.readline(0.05))
+        os.close(m1)                                # the board resets
+        os.write(m2, b"fresh\n")
+        self.assertEqual(link.readline(1.0), "fresh")
+        self.assertEqual((link.fd, link.reopens), (s2, 1))
+
+    def test_without_reopen_a_hangup_ends_the_read(self):
+        import tty
+        m1, s1 = os.openpty()
+        tty.setraw(s1)
+        link = flash.SerialLink(s1)
+        os.close(m1)
+        self.assertIsNone(link.readline(1.0))
+        os.close(s1)
+
+    def test_a_port_that_never_comes_back_ends_the_read(self):
+        import tty
+        m1, s1 = os.openpty()
+        tty.setraw(s1)
+
+        def gone(timeout):
+            raise FileNotFoundError(2, "No such file or directory")
+        link = flash.SerialLink(s1, reopen=gone)
+        os.close(m1)
+        self.assertIsNone(link.readline(1.0))
+
+
 class SessionTests(unittest.TestCase):
     def run_board(self, board, band="2.4GHz", **kw):
         return flash.configure_and_verify(board, desc(), band, **kw)
@@ -492,8 +614,9 @@ class MainTests(unittest.TestCase):
             mock.patch.object(flash, "SerialLink", return_value=self.board),
             mock.patch.object(flash.os, "close"),
             mock.patch.object(flash.subprocess, "run"),
+            mock.patch.object(flash, "usb_port", return_value=False),
         ]
-        self.open_port, _, self.close, self.esptool = [p.start() for p in patches]
+        self.open_port, _, self.close, self.esptool, self.usb = [p.start() for p in patches]
         for p in patches:
             self.addCleanup(p.stop)
         self.addCleanup(self._tmp.cleanup)
@@ -522,6 +645,31 @@ class MainTests(unittest.TestCase):
         self.assertEqual(rep["elf_sha256"], ELF_HEX)
         self.assertEqual(rep["image_sha256"]["spectre-sniffer.bin"],
                          hashlib.sha256(app_image()).hexdigest())
+
+    def test_a_usb_port_waits_for_the_port_and_checks_the_link(self):
+        self.usb.return_value = True
+        self.board = FakeBoard(boot_overrides={"link": "usb"})
+        self.board.fd = 77                      # the fd after the last reopen
+        with mock.patch.object(flash, "SerialLink", return_value=self.board) as sl, \
+                mock.patch.object(flash, "wait_open", return_value=55) as wo:
+            code, printed, _ = self.main()
+        self.assertEqual(code, 0)
+        argv = self.esptool.call_args.args[0]
+        self.assertEqual(argv[argv.index("--before") + 1], "usb-reset")
+        wo.assert_called_once_with("/dev/ttyUSB0", 921600, flash.REOPEN_TIMEOUT_S)
+        self.open_port.assert_not_called()
+        self.assertEqual(sl.call_args.args, (55,))
+        self.assertIsNotNone(sl.call_args.kwargs["reopen"])
+        self.close.assert_called_once_with(77)
+        self.assertEqual(json.loads(printed)["link"], "usb")
+
+    def test_a_usb_board_that_boots_on_uart_fails(self):
+        self.usb.return_value = True
+        self.board.fd = 55
+        with mock.patch.object(flash, "wait_open", return_value=55):
+            code, _, errors = self.main("--verify-only")
+        self.assertEqual(code, 1)
+        self.assertIn("link is None, expected 'usb'", errors)
 
     def test_baud_flag_sets_the_port_and_the_boot_check(self):
         self.board = FakeBoard(boot_overrides={"baud": 460800})

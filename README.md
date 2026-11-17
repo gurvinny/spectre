@@ -239,8 +239,10 @@ flowchart LR
 
 ## ✦ Hardware & Firmware
 
-Two ESP32-C5 development boards with a USB-to-UART bridge, two USB data cables, and a Linux host with
-Docker. That is the whole bill of materials; nothing transmits.
+Two ESP32-C5 development boards, two USB data cables, and a Linux host with Docker. That is the whole
+bill of materials; nothing transmits. From firmware 2.1.0 a board streams over its native USB port when a
+host is attached there (no baud rate, loss counted on the board), and over its UART bridge otherwise:
+[docs/hardware.md](docs/hardware.md#native-usb-firmware-210).
 
 | Step | Guide |
 |---|---|
@@ -337,7 +339,7 @@ Everything has a sensible default in `.env` (see `.env.example`) and can be chan
 
 | Key | Default Value | Description |
 |---|---|---|
-| `SERIAL_PORTS` | `/dev/ttyUSB0,/dev/ttyUSB1` | Target boards (band is auto-detected). |
+| `SERIAL_PORTS` | `/dev/ttyUSB0,/dev/ttyUSB1` | Target boards (band is auto-detected). Native USB boards: `/dev/espc5/<MAC>` nodes with `docker-compose.usb.yml` ([hardware.md](docs/hardware.md#native-usb-firmware-210)). A port that goes away is reopened when it is back. |
 | `SERIAL_BAUD` | `115200` | Must match the firmware: `921600` for the v2 firmware (`460800` up to 2.0.4), `115200` for the original. Any other value stops the sensor at startup. Read on every start, not seeded. |
 | `SPECTRE_SOURCE` | `serial` | Run mode: `serial` · `sim` · `replay`. |
 | `WAZUH_HOST` / `WAZUH_PORT` | `10.0.0.20` / `514` | Target SIEM syslog destination. |

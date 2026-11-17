@@ -317,6 +317,13 @@ static void test_lifecycle_lines(void)
                        "\"elf_sha\":\"0123456789abcdef\",\"reset\":\"poweron\",\"baud\":460800,"
                        "\"caps\":[\"counters\",\"cmd\",\"ap_info\",\"phy\",\"telemetry\"]}\n");
     sample(out);
+    CHECK_LACKS(out, "\"link\"");                   /* 2.0.x boot shape */
+
+    fw.link = "usb";
+    CHECK(line_boot(out, sizeof out, &fw, &c) > 0);
+    CHECK_HAS(out, "\"reset\":\"poweron\",\"baud\":460800,\"link\":\"usb\","
+                   "\"caps\":[\"counters\",\"cmd\",\"ap_info\",\"phy\",\"telemetry\",\"link\"]}\n");
+    sample(out);
 
     CHECK(line_started(out, sizeof out, 36) > 0);
     CHECK_STR(out, LINE_PREFIX "{\"event\":\"sniffer_started\",\"ch\":36}\n");
@@ -332,15 +339,40 @@ static void test_lifecycle_lines(void)
 
     fw_info_t img = {.ver = "2.0.3", .elf_sha = "0123456789abcdef", .reset = "poweron",
                      .baud = 460800};
-    CHECK(line_telemetry(out, sizeof out, 20000, &k, 150000, 120000, 412, 23040, &img) > 0);
+    tel_t t = {.heap_free = 150000, .heap_min = 120000, .temp_dc = 412, .uart_bps = 23040};
+    CHECK(line_telemetry(out, sizeof out, 20000, &k, &t, &img) > 0);
     CHECK_HAS(out, "\"event\":\"telemetry\",\"uptime_ms\":20000,\"rx_total\":1000,");
     CHECK_HAS(out, "\"q_hwm\":2048,\"q_size\":32768,\"heap\":150000,\"heap_min\":120000,"
                    "\"temp_dc\":412,\"uart_bps\":23040,\"ver\":\"2.0.3\","
                    "\"elf_sha\":\"0123456789abcdef\"}\n");
+    CHECK_LACKS(out, "\"link\"");                   /* no link: the 2.0.x shape */
+    CHECK_LACKS(out, "drop_usb");
     sample(out);
-    CHECK(line_telemetry(out, sizeof out, 20000, &k, 1, 1, TEMP_UNKNOWN, 0, NULL) > 0);
+    tel_t bare = {.heap_free = 1, .heap_min = 1, .temp_dc = TEMP_UNKNOWN};
+    CHECK(line_telemetry(out, sizeof out, 20000, &k, &bare, NULL) > 0);
     CHECK_LACKS(out, "temp_dc");
     CHECK_LACKS(out, "\"ver\"");                    /* no image info: no keys */
+
+    /* 2.1.0 over USB: link, both byte rates, USB refusals, stack floors */
+    tel_t usb = {.heap_free = 150000, .heap_min = 120000, .temp_dc = 412, .uart_bps = 0,
+                 .usb_bps = 61440, .drop_usb = 7, .link = "usb",
+                 .stack = {1180, 2240, 3010, 2990}};
+    img.ver = "2.1.0";
+    CHECK(line_telemetry(out, sizeof out, 20000, &k, &usb, &img) > 0);
+    CHECK_HAS(out, "\"temp_dc\":412,\"uart_bps\":0,\"link\":\"usb\",\"usb_bps\":61440,"
+                   "\"drop_usb\":7,\"stack_min\":{\"emit\":1180,\"hop\":2240,"
+                   "\"cmd_uart\":3010,\"cmd_usb\":2990},\"ver\":\"2.1.0\",");
+    sample(out);
+    /* the longest telemetry a board can send still fits the line buffer */
+    counters_t big = {.rx_total = UINT32_MAX, .emitted = UINT32_MAX, .drop_queue = UINT32_MAX,
+                      .drop_short = UINT32_MAX, .drop_dedup = UINT32_MAX,
+                      .drop_overflow = UINT32_MAX, .q_hwm = UINT32_MAX, .q_size = UINT32_MAX};
+    tel_t most = {.heap_free = UINT32_MAX, .heap_min = UINT32_MAX, .temp_dc = -32767,
+                  .uart_bps = UINT32_MAX, .usb_bps = UINT32_MAX, .drop_usb = UINT32_MAX,
+                  .link = "uart", .stack = {UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX}};
+    fw_info_t longest = {.ver = "2.1.0-123-gabcdef0-dirty", .elf_sha = "0123456789abcdef"};
+    CHECK(line_telemetry(out, sizeof out, UINT32_MAX, &big, &most, &longest) > 0);
+    CHECK_HAS(out, "\"link\":\"uart\",");
 
     CHECK(line_clock(out, sizeof out, 30000, 30000123456ULL) > 0);
     CHECK_STR(out, LINE_PREFIX "{\"event\":\"clock_sync\",\"uptime_ms\":30000,\"mono_us\":30000123456}\n");

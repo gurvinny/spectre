@@ -242,12 +242,16 @@ size_t line_boot(char *buf, size_t cap, const fw_info_t *fw, const cfg_t *c)
     jw_str(&w, "elf_sha", fw->elf_sha);
     jw_str(&w, "reset", fw->reset);
     jw_int(&w, "baud", fw->baud);
+    if (fw->link)
+        jw_str(&w, "link", fw->link);
     jw_arr(&w, "caps");
     jw_str(&w, NULL, "counters");
     jw_str(&w, NULL, "cmd");
     jw_str(&w, NULL, "ap_info");
     jw_str(&w, NULL, "phy");
     jw_str(&w, NULL, "telemetry");
+    if (fw->link)
+        jw_str(&w, NULL, "link");
     jw_arr_end(&w);
     return end(&w);
 }
@@ -286,8 +290,7 @@ size_t line_sweep(char *buf, size_t cap, uint32_t uptime_ms, uint32_t sweep_ms,
 }
 
 size_t line_telemetry(char *buf, size_t cap, uint32_t uptime_ms, const counters_t *k,
-                      uint32_t heap_free, uint32_t heap_min, int temp_dc,
-                      uint32_t uart_bps, const fw_info_t *fw)
+                      const tel_t *t, const fw_info_t *fw)
 {
     jw_t w;
     begin(&w, buf, cap);
@@ -296,11 +299,23 @@ size_t line_telemetry(char *buf, size_t cap, uint32_t uptime_ms, const counters_
     counters(&w, k);
     jw_int(&w, "q_hwm", k->q_hwm);
     jw_int(&w, "q_size", k->q_size);
-    jw_int(&w, "heap", heap_free);
-    jw_int(&w, "heap_min", heap_min);
-    if (temp_dc != TEMP_UNKNOWN)
-        jw_int(&w, "temp_dc", temp_dc);
-    jw_int(&w, "uart_bps", uart_bps);
+    jw_int(&w, "heap", t->heap_free);
+    jw_int(&w, "heap_min", t->heap_min);
+    if (t->temp_dc != TEMP_UNKNOWN)
+        jw_int(&w, "temp_dc", t->temp_dc);
+    jw_int(&w, "uart_bps", t->uart_bps);
+    /* 2.1.0: the data link and what it refused */
+    if (t->link) {
+        jw_str(&w, "link", t->link);
+        jw_int(&w, "usb_bps", t->usb_bps);
+        jw_int(&w, "drop_usb", t->drop_usb);
+        jw_open(&w, "stack_min");
+        jw_int(&w, "emit", t->stack[STK_EMIT]);
+        jw_int(&w, "hop", t->stack[STK_HOP]);
+        jw_int(&w, "cmd_uart", t->stack[STK_CMD_UART]);
+        jw_int(&w, "cmd_usb", t->stack[STK_CMD_USB]);
+        jw_close(&w);
+    }
     /* The running image, every 10 s: a host that missed the boot line (it
      * opened the port after the board booted) still learns what runs. */
     if (fw) {

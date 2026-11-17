@@ -3,6 +3,7 @@ import json
 import threading
 import time
 import unittest
+from unittest import mock
 
 from _support import TempDir
 
@@ -57,6 +58,37 @@ class TestHealth(unittest.TestCase):
         self.assertEqual(h["rx_total"], 1000)
         self.assertEqual(h["emitted"], 950)
 
+    def test_usb_telemetry_names_the_link_and_has_no_uart_load(self):
+        tel = dict(TELEMETRY, link="usb", usb_bps=61440, drop_usb=7,
+                   stack_min={"emit": 1180, "hop": 2240, "cmd_uart": 3010, "cmd_usb": 2990})
+        h = boards.health(dict(BOOT_V2, link="usb"), tel, None)
+        self.assertEqual(h["link"], "usb")
+        self.assertEqual((h["usb_bps"], h["drop_usb"]), (61440, 7))
+        self.assertEqual(h["stack_min"], {"emit": 1180, "hop": 2240, "cmd_uart": 3010,
+                                          "cmd_usb": 2990})
+        # uart_bps over USB is the idle UART, not a share of a line rate in use
+        self.assertIsNone(h["uart_load"])
+        self.assertEqual(h["lost"], 35)                # drop_usb is lines, not frames
+
+    def test_uart_link_keeps_the_uart_load(self):
+        h = boards.health(BOOT_V2, dict(TELEMETRY, link="uart", drop_usb=0), None)
+        self.assertEqual(h["link"], "uart")
+        self.assertAlmostEqual(h["uart_load"], 0.5)
+
+    def test_2_0_telemetry_has_no_link_figures(self):
+        h = boards.health(BOOT_V2, TELEMETRY, None)
+        self.assertEqual((h["link"], h["usb_bps"], h["drop_usb"], h["stack_min"]),
+                         (None, None, None, None))
+        self.assertAlmostEqual(h["uart_load"], 0.5)
+
+    def test_an_unknown_link_or_bad_stack_value_is_ignored(self):
+        h = boards.health(BOOT_V2, dict(TELEMETRY, link="spi", stack_min=[1, 2]), None)
+        self.assertIsNone(h["link"])
+        self.assertIsNone(h["stack_min"])
+        self.assertAlmostEqual(h["uart_load"], 0.5)
+        h = boards.health(BOOT_V2, dict(TELEMETRY, stack_min={"emit": "x", "hop": 10}), None)
+        self.assertEqual(h["stack_min"], {"emit": None, "hop": 10})
+
     def test_newer_sweep_counters_win_over_older_telemetry(self):
         tel = dict(TELEMETRY, rx_total=100, drop_queue=0, drop_overflow=0)
         sweep = dict(TELEMETRY, rx_total=2000, drop_queue=10, drop_overflow=10)
@@ -110,6 +142,7 @@ class TestSummarize(unittest.TestCase):
         self.assertEqual(s["firmware"]["ver"], "2.0.0")
         self.assertEqual(s["firmware"]["baud"], 460800)
         self.assertEqual(s["firmware"]["booted_at"], 100.0)
+        self.assertIsNone(s["firmware"]["link"])          # 2.0.x boot: no link key
         self.assertEqual(s["plan"]["channels"], "36-165")
         self.assertEqual(s["plan"]["dwell_ms"], 200)
         self.assertEqual(s["health"]["uptime_ms"], 60000)
@@ -528,6 +561,27 @@ class TestMainWiring(unittest.TestCase):
             sys.modules.pop("spectre.main", None)
             tmp.cleanup()
 
+
+    def test_a_reader_is_controllable_only_while_its_port_is_open(self):
+        import importlib
+        import sys
+        from types import SimpleNamespace
+        sys.modules.pop("spectre.main", None)
+        with mock.patch.dict("os.environ", {"SPECTRE_SOURCE": "replay",
+                                            "SPECTRE_DB": TempDir().file("s.db")}):
+            main = importlib.import_module("spectre.main")
+        senders = main.Senders()
+        usb = SimpleNamespace(sensor_id="BOARD", is_open=True, send=lambda c: 1)
+        senders.add_reader(usb)
+        senders["sim0"] = lambda c: 2
+        self.assertEqual(sorted(senders), ["BOARD", "sim0"])
+        self.assertIs(senders.get("BOARD"), usb.send)
+        usb.is_open = False                  # the board reset; its port is away
+        self.assertNotIn("BOARD", senders)
+        self.assertIsNone(senders.get("BOARD"))
+        self.assertEqual(len(senders), 1)
+        usb.is_open = True                   # and back
+        self.assertIn("BOARD", senders)
 
     def test_open_serial_ports_are_controllable_and_failed_ones_are_not(self):
         import importlib

@@ -24,7 +24,7 @@ COMMANDS = ("get_config", "set", "reset_config", "reboot")
 CMD_ID_MAX = 16             # the firmware truncates a longer id
 UART_BITS_PER_BYTE = 10     # 8N1: start + 8 data + stop
 
-_FIRMWARE_KEYS = ("chip", "fw", "ver", "elf_sha", "reset", "baud", "caps")
+_FIRMWARE_KEYS = ("chip", "fw", "ver", "elf_sha", "reset", "baud", "link", "caps")
 _PLAN_KEYS = ("channels", "dwell_ms", "pin", "filter", "dedup", "ap_info_s")
 # A boot row older than the boot that telemetry implies (received_at minus
 # uptime) by more than this was missed: the board restarted while nothing read
@@ -74,12 +74,21 @@ def health(boot: Optional[dict], telemetry: Optional[dict], sweep: Optional[dict
         lost = (_num(counters.get("drop_queue")) or 0) + (_num(counters.get("drop_overflow")) or 0)
     loss_pct = round(100 * lost / rx, 3) if rx else None
     bps = _num(tel.get("uart_bps"))
-    uart_load = _ratio(bps * UART_BITS_PER_BYTE if bps is not None else None, boot.get("baud"))
+    # 2.1.0 names its link; over USB there is no line rate to be close to.
+    link = tel.get("link") if tel.get("link") in ("usb", "uart") else None
+    uart_load = None
+    if link != "usb":
+        uart_load = _ratio(bps * UART_BITS_PER_BYTE if bps is not None else None,
+                           boot.get("baud"))
+    stacks = tel.get("stack_min")
     temp = _num(tel.get("temp_dc"))
     return {
         "rx_total": rx, "emitted": emitted, "lost": lost, "loss_pct": loss_pct,
         "drops": {k: _num(counters.get(k)) for k in _COUNTER_KEYS[2:]},
         "uart_bps": bps, "uart_load": uart_load,
+        "link": link, "usb_bps": _num(tel.get("usb_bps")), "drop_usb": _num(tel.get("drop_usb")),
+        "stack_min": ({k: _num(v) for k, v in stacks.items()}
+                      if isinstance(stacks, dict) else None),
         "queue_fill": _ratio(tel.get("q_hwm"), tel.get("q_size")),
         "heap": _num(tel.get("heap")), "heap_min": _num(tel.get("heap_min")),
         "temp_c": temp / 10 if temp is not None else None,

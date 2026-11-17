@@ -60,8 +60,21 @@ typedef struct {
     const char *ver;        /* app version (git describe) */
     const char *elf_sha;    /* first 16 hex chars of the app ELF sha256 */
     const char *reset;      /* reset reason */
-    uint32_t baud;
+    uint32_t baud;          /* UART0 line rate */
+    const char *link;       /* "usb" or "uart": where this boot line went */
 } fw_info_t;
+
+/* Telemetry beyond the counters. */
+enum { STK_EMIT, STK_HOP, STK_CMD_UART, STK_CMD_USB, STK_N };
+typedef struct {
+    uint32_t heap_free, heap_min;
+    int temp_dc;            /* TEMP_UNKNOWN when the sensor failed */
+    uint32_t uart_bps;      /* bytes/s written to UART0 over the interval */
+    uint32_t usb_bps;       /* bytes/s written to USB over the interval */
+    uint32_t drop_usb;      /* lines the USB host did not take, since boot */
+    const char *link;       /* current link, "usb" or "uart" */
+    uint32_t stack[STK_N];  /* least free stack seen per task, bytes */
+} tel_t;
 
 size_t line_frame(char *buf, size_t cap, uint32_t seq, uint32_t uptime_ms,
                   const radio_meta_t *rm, const d11_frame_t *f, const ie_info_t *ie);
@@ -73,8 +86,7 @@ size_t line_started(char *buf, size_t cap, uint8_t ch);
 size_t line_sweep(char *buf, size_t cap, uint32_t uptime_ms, uint32_t sweep_ms,
                   const counters_t *k);
 size_t line_telemetry(char *buf, size_t cap, uint32_t uptime_ms, const counters_t *k,
-                      uint32_t heap_free, uint32_t heap_min, int temp_dc,
-                      uint32_t uart_bps, const fw_info_t *fw);
+                      const tel_t *t, const fw_info_t *fw);
 size_t line_clock(char *buf, size_t cap, uint32_t uptime_ms, uint64_t mono_us);
 size_t line_ack(char *buf, size_t cap, const cmd_t *cmd, const cfg_t *c);
 

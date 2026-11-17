@@ -9,8 +9,13 @@ third-party serial dependency required.
 Each port is opened non-blocking and registered with the asyncio event loop via
 ``add_reader``, so reads are fully async and cheap even at ~30 frames/sec/board.
 
-The v2 firmware runs at 460800 baud and accepts one-line JSON commands;
-:meth:`SerialReader.send` writes them on the same descriptor.
+The v2 firmware runs at 921600 baud (460800 up to 2.0.4) and accepts one-line
+JSON commands; :meth:`SerialReader.send` writes them on the same descriptor.
+
+From 2.1.0 a board can stream over its native USB port instead (a ``ttyACM``
+CDC device, no baud rate). That port disappears whenever the chip resets or is
+flashed and comes back as a new device, so a reader that sees its port hang up
+closes it and keeps reopening the same path until the board is back.
 
 Author: gurvinny
 Project: SPECTRE
@@ -18,6 +23,7 @@ Project: SPECTRE
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
 import json
 import logging
@@ -48,6 +54,11 @@ _BAUD_MAP = {
 # longer line is cut off and acked "line too long".
 MAX_COMMAND_BYTES = 254
 SEND_TIMEOUT_S = 2.0
+# Reopen backoff after a port goes away: a USB board re-enumerates within a
+# second or two of a reset, a flash takes longer.
+REOPEN_FIRST_S = 0.5
+REOPEN_MAX_S = 5.0
+_HANGUP = select.POLLHUP | select.POLLERR | select.POLLNVAL
 
 
 def _open_serial(path: str, baud: int) -> int:
@@ -91,17 +102,73 @@ class SerialReader:
                              on_ap_info=pipeline.record_ap_info,
                              on_malformed=self._on_malformed)
         self._fd: int | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._retry: asyncio.TimerHandle | None = None
+        self._delay = REOPEN_FIRST_S
+        self.reopens = 0   # times the port came back after going away
         self._buf = b""
         self._line = b""   # bytes of the line being parsed, for a bad-line record
         self._send_lock = threading.Lock()
+
+    @property
+    def is_open(self) -> bool:
+        return self._fd is not None
 
     def _on_malformed(self, line: str) -> None:
         self.pipeline.record_malformed(self.sensor_id, line, self._line, self.parser.band)
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Attach to the port; if it is not there yet, keep trying."""
+        self._loop = loop
+        try:
+            self._attach()
+        except OSError as exc:
+            log.error("could not open %s: %s; retrying", self.path, exc)
+            self._schedule_reopen()
+
+    def _attach(self) -> None:
+        assert self._loop is not None
         self._fd = _open_serial(self.path, self.baud)
-        loop.add_reader(self._fd, self._on_readable)
+        self._buf = b""
+        self._loop.add_reader(self._fd, self._on_readable)
+        self._delay = REOPEN_FIRST_S
         log.info("reader attached to %s (%s baud)", self.path, self.baud)
+
+    def _hung_up(self) -> bool:
+        assert self._fd is not None
+        p = select.poll()
+        p.register(self._fd, select.POLLIN)
+        return any(ev & _HANGUP for _, ev in p.poll(0))
+
+    def _lost(self, why: str) -> None:
+        """The port went away (USB board reset, cable pulled): close it and
+        retry. Half a line from before cannot join the next one."""
+        log.warning("%s went away (%s); reopening", self.path, why)
+        self._detach()
+        self._schedule_reopen()
+
+    def _detach(self) -> None:
+        if self._fd is not None:
+            with contextlib.suppress(Exception):
+                assert self._loop is not None
+                self._loop.remove_reader(self._fd)
+            with contextlib.suppress(OSError):
+                os.close(self._fd)
+            self._fd = None
+
+    def _schedule_reopen(self) -> None:
+        assert self._loop is not None
+        self._retry = self._loop.call_later(self._delay, self._reopen)
+        self._delay = min(self._delay * 2, REOPEN_MAX_S)
+
+    def _reopen(self) -> None:
+        self._retry = None
+        try:
+            self._attach()
+        except OSError:
+            self._schedule_reopen()
+            return
+        self.reopens += 1
 
     def _on_readable(self) -> None:
         assert self._fd is not None
@@ -110,9 +177,14 @@ class SerialReader:
         except BlockingIOError:
             return
         except OSError as exc:
-            log.error("read error on %s: %s", self.path, exc)
+            # EIO after a hangup; anything else on a tty is no better.
+            self._lost(str(exc))
             return
         if not chunk:
+            # A tty read with VMIN=0 returns 0 both for "nothing yet" and
+            # after a hangup; only the second leaves POLLHUP set.
+            if self._hung_up():
+                self._lost("hangup")
             return
         self._buf += chunk
         while b"\n" in self._buf:
@@ -156,11 +228,11 @@ class SerialReader:
         return len(data)
 
     def stop(self, loop: asyncio.AbstractEventLoop) -> None:
-        if self._fd is not None:
-            with __import__("contextlib").suppress(Exception):
-                loop.remove_reader(self._fd)
-                os.close(self._fd)
-            self._fd = None
+        if self._retry is not None:
+            self._retry.cancel()
+            self._retry = None
+        self._loop = self._loop or loop
+        self._detach()
 
 
 def build_readers(ports: list[str], baud: int, pipeline: Pipeline) -> list[SerialReader]:

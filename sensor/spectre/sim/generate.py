@@ -56,6 +56,8 @@ DWELL_MIN_MS, DWELL_MAX_MS = 50, 5000
 AP_INFO_MAX_S = 3600
 MAX_CHANNELS = 32
 DEFAULT_DROP_RATE = 0.002
+LINKS = ("uart", "usb")       # 2.1.0 data links; None keeps the 2.0.x line shape
+STACK_MIN = {"emit": 1180, "hop": 2240, "cmd_uart": 3010, "cmd_usb": 2990}
 
 # 20 MHz primaries the radio can tune to, as in the firmware's cfg.c.
 CH_5G = (36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128,
@@ -128,10 +130,14 @@ class Simulator:
 
     def __init__(self, band: str = "2.4GHz", seed: Optional[int] = None, fw: str = "v2",
                  clock: Callable[[], float] = time.time,
-                 drop_rate: float = DEFAULT_DROP_RATE) -> None:
+                 drop_rate: float = DEFAULT_DROP_RATE, link: Optional[str] = None) -> None:
         if fw not in ("v1", "v2"):
             raise ValueError(f"unknown firmware {fw!r}")
+        if link is not None and (fw != "v2" or link not in LINKS):
+            raise ValueError(f"link {link!r} needs fw v2 and one of {LINKS}")
         self.fw = fw
+        self.link = link
+        self.drop_usb = 0    # lines a USB host did not take; set by a test or scenario
         self.rng = random.Random(seed)
         # v2 extras never touch self.rng: v1 output stays identical per seed.
         self._prng = random.Random(None if seed is None else f"v2-{seed}")
@@ -205,7 +211,10 @@ class Simulator:
         boot = {"event": "boot", "chip": "ESP32-C5", "mode": "promiscuous"}
         boot.update(self.wire_config())
         boot.update({"fw": "spectre-sniffer", "ver": FW_VERSION, "elf_sha": ELF_SHA,
-                     "reset": self.reset_reason, "baud": BAUD, "caps": list(CAPS)})
+                     "reset": self.reset_reason, "baud": BAUD})
+        if self.link:
+            boot["link"] = self.link
+        boot["caps"] = list(CAPS) + (["link"] if self.link else [])
         c = self.config
         return [self._emit(boot),
                 self._emit({"event": "sniffer_started", "ch": c["pin"] or c["channels"][0]})]
@@ -433,10 +442,13 @@ class Simulator:
             self._heap_min = min(self._heap_min, heap)
             tel = {"event": "telemetry", "uptime_ms": now}
             tel.update(k)
+            bps = int((wire_bytes - self._bytes_at_tel) / ((now - self._last_tel) / 1000))
             tel.update({"q_hwm": self._q_hwm, "q_size": Q_SIZE, "heap": heap,
                         "heap_min": self._heap_min, "temp_dc": 400 + self._prng.randrange(40),
-                        "uart_bps": int((wire_bytes - self._bytes_at_tel)
-                                        / ((now - self._last_tel) / 1000))})
+                        "uart_bps": 0 if self.link == "usb" else bps})
+            if self.link:
+                tel.update({"link": self.link, "usb_bps": bps if self.link == "usb" else 0,
+                            "drop_usb": self.drop_usb, "stack_min": dict(STACK_MIN)})
             out.append(self._emit(tel))
             self._last_tel = now
             self._bytes_at_tel = wire_bytes

@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections.abc import Callable, Iterator, MutableMapping
 
 import uvicorn
 
@@ -37,13 +38,45 @@ def _env(key: str, default: str) -> str:
     return os.environ.get(key, default)
 
 
+class Senders(MutableMapping):
+    """Board id -> send(). A serial board counts only while its port is open:
+    a native USB board is away while it resets or is flashed, and is not
+    controllable until the reader has it back."""
+
+    def __init__(self) -> None:
+        self._fixed: dict[str, Callable[[dict], int]] = {}
+        self._readers: dict = {}
+
+    def add_reader(self, reader) -> None:
+        self._readers[reader.sensor_id] = reader
+
+    def __getitem__(self, key: str) -> Callable[[dict], int]:
+        r = self._readers.get(key)
+        if r is not None and r.is_open:
+            return r.send
+        return self._fixed[key]
+
+    def __setitem__(self, key: str, value: Callable[[dict], int]) -> None:
+        self._fixed[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self._fixed[key]
+
+    def __iter__(self) -> Iterator[str]:
+        live = [k for k, r in self._readers.items() if r.is_open]
+        return iter(live + [k for k in self._fixed if k not in live])
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+
 def build() -> tuple:
     store = Store(_env("SPECTRE_DB", "/data/spectre.db"))
     config = Config(store)
     pipeline = Pipeline(store, config)
     # Board id -> send(); filled at startup once the source is up. Replay
     # has no boards to command, so it registers none.
-    senders: dict = {}
+    senders = Senders()
     app = create_app(store, config, pipeline, senders=senders)
 
     source = _env("SPECTRE_SOURCE", "serial").lower()
@@ -72,12 +105,8 @@ def build() -> tuple:
         else:
             readers = build_readers(ports, baud, pipeline)
             for r in readers:
-                try:
-                    r.start(loop)
-                except OSError as exc:
-                    log.error("could not open %s: %s", r.path, exc)
-                    continue
-                senders[r.sensor_id] = r.send
+                r.start(loop)   # a missing port is retried, not skipped
+                senders.add_reader(r)
             state["readers"] = readers
             log.info("ingest source: SERIAL %s", ports)
 

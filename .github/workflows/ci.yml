@@ -84,7 +84,8 @@ jobs:
           cd firmware/spectre-sniffer/build
           sudo chown -R "$(id -u)" .
           sha256sum spectre-sniffer.bin bootloader/bootloader.bin \
-            partition_table/partition-table.bin | tee SHA256SUMS
+            partition_table/partition-table.bin spectre-sniffer.elf \
+            spectre-sniffer.map | tee SHA256SUMS
 
       - name: Upload the image
         uses: actions/upload-artifact@v7
@@ -97,4 +98,7 @@ jobs:
             firmware/spectre-sniffer/build/flash_args
             firmware/spectre-sniffer/build/flasher_args.json
             firmware/spectre-sniffer/build/SHA256SUMS
+            # symbols for gdb / OpenOCD reads of a running board; not flashed
+            firmware/spectre-sniffer/build/spectre-sniffer.elf
+            firmware/spectre-sniffer/build/spectre-sniffer.map
           retention-days: 30

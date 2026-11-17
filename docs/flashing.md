@@ -188,6 +188,11 @@ sequenceDiagram
 ```
 
 
+**On the native USB port** (2.1.0 and later, or any board flashed over that connector), pass the
+`ttyACM` port or its `/dev/espc5/<MAC>` node to `--port`. `flash.py` recognises it by its USB ids,
+has esptool reset with `--before usb-reset`, reopens the port each time the board re-enumerates (after
+the flash and after the reboot command), and requires the boot line to say `"link":"usb"`.
+
 Plain `idf.py -p /dev/ttyUSB0 -b 460800 flash` also works. A fresh board then boots on the 2.4 GHz plan;
 send `{"cmd":"set","band":"5GHz"}` to make it the 5 GHz board. The band is saved in NVS and survives
 reflashing the app.

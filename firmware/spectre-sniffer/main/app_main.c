@@ -2,10 +2,16 @@
  * SPECTRE sniffer firmware for the ESP32-C5.
  *
  * Data path:
- *   radio -> promiscuous callback -> ring buffer -> emit task -> UART0
+ *   radio -> promiscuous callback -> ring buffer -> emit task -> link
  * The callback only copies bytes and bumps counters; all decoding happens in
- * the emit task, so a slow UART shows up as counted ring-buffer drops rather
+ * the emit task, so a slow link shows up as counted ring-buffer drops rather
  * than as silent loss inside the Wi-Fi driver.
+ *
+ * The link is the chip's native USB-Serial-JTAG port while a USB host is
+ * attached to it, and UART0 otherwise; the choice is made per line, so a host
+ * that appears after boot still gets the stream. USB has no baud rate and no
+ * bridge chip; a line the host does not take in time is counted (drop_usb),
+ * never half-written.
  *
  * The radio never transmits: Wi-Fi runs in NULL mode with promiscuous
  * receive only, so the full channel list can be monitored without assuming
@@ -15,11 +21,14 @@
  * Project: SPECTRE
  */
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "driver/temperature_sensor.h"
 #include "driver/uart.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "esp_app_desc.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
@@ -45,6 +54,10 @@
 #define UART_BAUD 921600  /* data line rate; sensor/tests/test_flash_tool.py keeps the tools in step */
 #define UART_TX_BUF 8192
 #define UART_RX_BUF 1024
+#define USB_TX_BUF 8192
+#define USB_RX_BUF 1024
+#define USB_WRITE_MS 20      /* longest wait for room while the host is reading */
+#define USB_BOOT_WAIT_MS 1000 /* how long boot waits for a host before it writes */
 #define RING_SIZE (64 * 1024)
 #define MGMT_COPY_MAX 768    /* enough for the IEs we parse */
 #define DATA_COPY_MAX 64     /* header + LLC + EAPOL key info */
@@ -57,7 +70,7 @@ typedef struct {
 } rx_item_t;
 
 static RingbufHandle_t s_ring;
-static SemaphoreHandle_t s_uart_lock;
+static SemaphoreHandle_t s_line_lock;
 static SemaphoreHandle_t s_cfg_lock;
 static cfg_t s_cfg;
 static atomic_uint s_cfg_gen;     /* bumped on every applied change */
@@ -65,7 +78,10 @@ static atomic_uint s_epoch = 1;   /* hop epoch, for dedup */
 static atomic_uint s_rx_total, s_drop_queue, s_drop_short;
 static uint32_t s_emitted, s_drop_dedup, s_drop_overflow; /* emit task only */
 static ring_acct_t s_ring_acct;   /* rx callback adds, emit task returns */
-static atomic_uint s_uart_bytes;
+static atomic_uint s_uart_bytes, s_usb_bytes;
+static atomic_uint s_drop_usb;    /* lines the USB host did not take in time */
+static bool s_usb_stalled;        /* last USB write timed out; under s_line_lock */
+static TaskHandle_t s_emit_h, s_hop_h, s_cmd_uart_h, s_cmd_usb_h;
 static atomic_uint s_filter_mask = FILT_MGMT | FILT_DATA;
 static apc_t s_apc;
 static temperature_sensor_handle_t s_tsens;
@@ -74,14 +90,38 @@ static fw_info_t s_fw;            /* set once in app_main, read by telemetry */
 
 static uint32_t uptime_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
-static void uart_line(const char *buf, size_t len)
+static bool usb_link(void) { return usb_serial_jtag_is_connected(); }
+
+static const char *link_name(void) { return usb_link() ? "usb" : "uart"; }
+
+/* One whole line to the current link. A USB write is all or nothing; while
+ * the host is not reading (port closed), the first timeout marks the link
+ * stalled and later lines are refused at once instead of each waiting
+ * USB_WRITE_MS, which would slow the emit task into ring-buffer drops. */
+static void link_line(const char *buf, size_t len)
 {
     if (len == 0)
         return;
-    xSemaphoreTake(s_uart_lock, portMAX_DELAY);
-    uart_write_bytes(UART_PORT, buf, len);
-    xSemaphoreGive(s_uart_lock);
-    atomic_fetch_add(&s_uart_bytes, (unsigned)len);
+    xSemaphoreTake(s_line_lock, portMAX_DELAY);
+    if (usb_link()) {
+        TickType_t wait = s_usb_stalled ? 0 : pdMS_TO_TICKS(USB_WRITE_MS);
+        if (usb_serial_jtag_write_bytes(buf, len, wait) == (int)len) {
+            s_usb_stalled = false;
+            atomic_fetch_add(&s_usb_bytes, (unsigned)len);
+        } else {
+            s_usb_stalled = true;
+            atomic_fetch_add(&s_drop_usb, 1);
+        }
+    } else {
+        uart_write_bytes(UART_PORT, buf, len);
+        atomic_fetch_add(&s_uart_bytes, (unsigned)len);
+    }
+    xSemaphoreGive(s_line_lock);
+}
+
+static uint32_t stack_min(TaskHandle_t h)
+{
+    return h ? (uint32_t)uxTaskGetStackHighWaterMark(h) : 0;
 }
 
 static void snapshot(counters_t *k)
@@ -251,7 +291,7 @@ static void emit_task(void *arg)
                 size_t n = line_ap_info(line, sizeof line, now, it->rm.channel, f.bssid,
                                         bi, capa, &ie, apc_reason_name(why));
                 if (n)
-                    uart_line(line, n);
+                    link_line(line, n);
                 else
                     s_drop_overflow++;
             }
@@ -269,7 +309,7 @@ static void emit_task(void *arg)
             continue;
         }
         s_emitted++;
-        uart_line(line, n);
+        link_line(line, n);
     }
 }
 
@@ -311,7 +351,7 @@ static void hop_task(void *arg)
 
         if (wrapped) {
             snapshot(&k);
-            uart_line(line, line_sweep(line, sizeof line, now, now - sweep_start, &k));
+            link_line(line, line_sweep(line, sizeof line, now, now - sweep_start, &k));
             sweep_start = now;
         }
         if (now - last_tel >= TELEMETRY_MS) {
@@ -319,31 +359,59 @@ static void hop_task(void *arg)
             int temp_dc = TEMP_UNKNOWN;
             if (s_tsens && temperature_sensor_get_celsius(s_tsens, &t) == ESP_OK)
                 temp_dc = (int)(t * 10.0f);
-            uint32_t bytes = atomic_exchange(&s_uart_bytes, 0);
-            uint32_t bps = (uint32_t)((uint64_t)bytes * 1000u / (now - last_tel));
+            uint32_t span = now - last_tel;
+            tel_t ti = {
+                .heap_free = (uint32_t)esp_get_free_heap_size(),
+                .heap_min = (uint32_t)esp_get_minimum_free_heap_size(),
+                .temp_dc = temp_dc,
+                .uart_bps = (uint32_t)((uint64_t)atomic_exchange(&s_uart_bytes, 0) * 1000u / span),
+                .usb_bps = (uint32_t)((uint64_t)atomic_exchange(&s_usb_bytes, 0) * 1000u / span),
+                .drop_usb = atomic_load(&s_drop_usb),
+                .link = link_name(),
+                .stack = {stack_min(s_emit_h), stack_min(s_hop_h),
+                          stack_min(s_cmd_uart_h), stack_min(s_cmd_usb_h)},
+            };
             snapshot(&k);
-            uart_line(line, line_telemetry(line, sizeof line, now, &k,
-                      (uint32_t)esp_get_free_heap_size(),
-                      (uint32_t)esp_get_minimum_free_heap_size(), temp_dc, bps, &s_fw));
+            link_line(line, line_telemetry(line, sizeof line, now, &k, &ti, &s_fw));
             last_tel = now;
         }
         if (now - last_clock >= CLOCK_SYNC_MS) {
-            uart_line(line, line_clock(line, sizeof line, now, (uint64_t)esp_timer_get_time()));
+            link_line(line, line_clock(line, sizeof line, now, (uint64_t)esp_timer_get_time()));
             last_clock = now;
         }
     }
 }
 
+enum { CMD_ON_UART, CMD_ON_USB };
+
+static int read1(int port, uint8_t *ch)
+{
+    return port == CMD_ON_USB ? usb_serial_jtag_read_bytes(ch, 1, portMAX_DELAY)
+                              : uart_read_bytes(UART_PORT, ch, 1, portMAX_DELAY);
+}
+
+static void link_wait_tx_done(void)
+{
+    if (usb_link())
+        usb_serial_jtag_wait_tx_done(pdMS_TO_TICKS(500));
+    else
+        uart_wait_tx_done(UART_PORT, pdMS_TO_TICKS(500));
+}
+
+/* One task per link reads commands; s_cmd_lock runs one command at a time
+ * and the ack goes to whichever link is current. */
+static SemaphoreHandle_t s_cmd_lock;
+
 static void cmd_task(void *arg)
 {
-    (void)arg;
-    static char out[LINE_BUF];
+    int port = (int)(intptr_t)arg;
+    static char out[LINE_BUF];   /* shared by both tasks, used under s_cmd_lock */
     char buf[256];
     size_t n = 0;
     bool overlong = false;
     for (;;) {
         uint8_t ch;
-        if (uart_read_bytes(UART_PORT, &ch, 1, portMAX_DELAY) != 1)
+        if (read1(port, &ch) != 1)
             continue;
         if (ch != '\n' && ch != '\r') {
             if (n + 1 < sizeof buf)
@@ -357,6 +425,7 @@ static void cmd_task(void *arg)
         buf[n] = '\0';
         n = 0;
 
+        xSemaphoreTake(s_cmd_lock, portMAX_DELAY);
         cfg_t cur = cfg_get(), next;
         cmd_t cmd;
         bool ok = !overlong && cmd_parse(buf, &cur, &next, &cmd);
@@ -374,11 +443,12 @@ static void cmd_task(void *arg)
             atomic_fetch_add(&s_cfg_gen, 1);
             cur = next;
         }
-        uart_line(out, line_ack(out, sizeof out, &cmd, &cur));
+        link_line(out, line_ack(out, sizeof out, &cmd, &cur));
         if (ok && cmd.kind == CMD_REBOOT) {
-            uart_wait_tx_done(UART_PORT, pdMS_TO_TICKS(500));
+            link_wait_tx_done();
             esp_restart();
         }
+        xSemaphoreGive(s_cmd_lock);
     }
 }
 
@@ -417,11 +487,18 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(uart_driver_install(UART_PORT, UART_RX_BUF, UART_TX_BUF, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(UART_PORT, &uc));
+    usb_serial_jtag_driver_config_t usb = {.tx_buffer_size = USB_TX_BUF,
+                                           .rx_buffer_size = USB_RX_BUF};
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb));
+    /* Stray console output on USB then goes through the driver, not straight
+     * into the FIFO underneath it. */
+    usb_serial_jtag_vfs_use_driver();
 
-    s_uart_lock = xSemaphoreCreateMutex();
+    s_line_lock = xSemaphoreCreateMutex();
     s_cfg_lock = xSemaphoreCreateMutex();
+    s_cmd_lock = xSemaphoreCreateMutex();
     s_ring = xRingbufferCreate(RING_SIZE, RINGBUF_TYPE_NOSPLIT);
-    configASSERT(s_uart_lock && s_cfg_lock && s_ring);
+    configASSERT(s_line_lock && s_cfg_lock && s_cmd_lock && s_ring);
     apc_init(&s_apc);
     ra_init(&s_ring_acct);
 
@@ -437,20 +514,30 @@ void app_main(void)
     const esp_app_desc_t *app = esp_app_get_description();
     snprintf(s_ver, sizeof s_ver, "%s", app->version);
     esp_app_get_elf_sha256(s_sha, sizeof s_sha);
-    s_fw = (fw_info_t){.ver = s_ver, .elf_sha = s_sha,
-                       .reset = reset_name(esp_reset_reason()), .baud = UART_BAUD};
+    /* The connection monitor assumes a host until it has seen a few ticks
+     * without one, so settle first; then give a host that is still
+     * enumerating a moment, so the boot line goes where the reader is. */
+    vTaskDelay(pdMS_TO_TICKS(50));
+    for (int waited = 0; !usb_link() && waited < USB_BOOT_WAIT_MS; waited += 50)
+        vTaskDelay(pdMS_TO_TICKS(50));
 
-    /* The console shares UART0 with the data lines and writes without the
-     * line lock, so any log line splices into the middle of a JSON line and
-     * that line is lost. Silence every tag before the radio starts. */
+    s_fw = (fw_info_t){.ver = s_ver, .elf_sha = s_sha,
+                       .reset = reset_name(esp_reset_reason()), .baud = UART_BAUD,
+                       .link = link_name()};
+
+    /* The console shares UART0 (and USB) with the data lines and writes
+     * without the line lock, so any log line splices into the middle of a
+     * JSON line and that line is lost. Silence every tag before the radio
+     * starts. */
     esp_log_level_set("*", ESP_LOG_NONE);
 
     static char line[LINE_BUF];
-    uart_line(line, line_boot(line, sizeof line, &s_fw, &s_cfg));
+    link_line(line, line_boot(line, sizeof line, &s_fw, &s_cfg));
     radio_init(&s_cfg);
-    uart_line(line, line_started(line, sizeof line, s_cfg.pin ? s_cfg.pin : s_cfg.ch[0]));
+    link_line(line, line_started(line, sizeof line, s_cfg.pin ? s_cfg.pin : s_cfg.ch[0]));
 
-    xTaskCreate(emit_task, "emit", 6144, NULL, 5, NULL);
-    xTaskCreate(hop_task, "hop", 4096, NULL, 6, NULL);
-    xTaskCreate(cmd_task, "cmd", 4096, NULL, 4, NULL);
+    xTaskCreate(emit_task, "emit", 6144, NULL, 5, &s_emit_h);
+    xTaskCreate(hop_task, "hop", 4096, NULL, 6, &s_hop_h);
+    xTaskCreate(cmd_task, "cmd_uart", 4096, (void *)(intptr_t)CMD_ON_UART, 4, &s_cmd_uart_h);
+    xTaskCreate(cmd_task, "cmd_usb", 4096, (void *)(intptr_t)CMD_ON_USB, 4, &s_cmd_usb_h);
 }
