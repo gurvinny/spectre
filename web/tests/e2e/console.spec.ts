@@ -45,3 +45,20 @@ for (const route of ROUTES) {
     ).toEqual([]);
   });
 }
+
+test("a page load shows the threats stored before it", async ({ page, context }) => {
+  const api = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8100";
+  // Wait for the simulator's detections to reach the store.
+  let stored = 0;
+  await expect.poll(async () => {
+    const r = await (await context.request.get(`${api}/api/threats?limit=120`)).json();
+    stored = r.threats.length;
+    return stored;
+  }, { timeout: 90_000 }).toBeGreaterThanOrEqual(3);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  // Loaded from the store on connect, not only what is pushed after it.
+  const pill = page.getByText(/^\d+ recent$/);
+  await expect.poll(async () => parseInt((await pill.textContent()) ?? "0", 10),
+    { timeout: 5_000 }).toBeGreaterThanOrEqual(stored);
+});

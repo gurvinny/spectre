@@ -1,7 +1,8 @@
 /**
  * Live WebSocket feed hook.
  * Maintains a rolling window of frames + threats and the latest overview
- * snapshot, and auto-reconnects. Frames arrive batched (~4 Hz) so the UI stays
+ * snapshot, and auto-reconnects. Each connect loads the stored recent threats,
+ * so the window holds what fired before the page opened or while it was away. Frames arrive batched (~4 Hz) so the UI stays
  * smooth under ~60 frames/sec.
  * Author: gurvinny
  */
@@ -9,6 +10,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api, wsUrl } from "@/lib/api";
+import { mergeThreats } from "@/lib/threats";
 import type { Frame, Threat, Overview, WsMessage } from "@/lib/types";
 
 const MAX_FRAMES = 500;
@@ -39,7 +41,16 @@ export function useLiveFeed(enabled = true) {
       const ws = new WebSocket(wsUrl());
       wsRef.current = ws;
 
-      ws.onopen = () => setConn("live");
+      ws.onopen = async () => {
+        setConn("live");
+        try {
+          const { threats: stored } = await api.get<{ threats: Threat[] }>(
+            `/api/threats?limit=${MAX_THREATS}`);
+          if (!closed) setThreats((prev) => mergeThreats(prev, stored, MAX_THREATS));
+        } catch {
+          /* the pushed threats still arrive; the next connect retries the load */
+        }
+      };
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data) as WsMessage;
         if (msg.type === "snapshot") {
@@ -49,9 +60,7 @@ export function useLiveFeed(enabled = true) {
         }
         setFps(msg.fps);
         if (msg.threats.length) {
-          setThreats((prev) =>
-            [...msg.threats, ...prev].slice(0, MAX_THREATS),
-          );
+          setThreats((prev) => mergeThreats(msg.threats, prev, MAX_THREATS));
         }
         if (!paused.current && msg.frames.length) {
           setFrames((prev) => [...msg.frames.slice().reverse(), ...prev].slice(0, MAX_FRAMES));

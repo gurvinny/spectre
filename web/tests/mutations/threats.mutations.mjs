@@ -1,0 +1,30 @@
+// Live threat window: stored and pushed threats merged once each, newest first.
+export const TARGET = "src/lib/threats.ts";
+export const TESTS = "src/lib/threats.test.ts";
+export const MUTATIONS = [
+  ["key-ignores-ts", "[t.ts, t.rule,", "[t.rule,",
+   "threats that differ in any identity field are kept apart"],
+  ["key-ignores-rule", "[t.ts, t.rule, t.band,", "[t.ts, t.band,",
+   "threats that differ in any identity field are kept apart"],
+  ["key-ignores-band", "t.rule, t.band, t.src", "t.rule, t.src",
+   "threats that differ in any identity field are kept apart"],
+  ["key-ignores-src", ', t.src ?? "", ', ", ",
+   "threats that differ in any identity field are kept apart"],
+  ["key-ignores-bssid", ', t.bssid ?? ""]', "]",
+   "threats that differ in any identity field are kept apart"],
+  ["key-fields-run-together", '.join("|")', '.join("")',
+   "threats that differ in any identity field are kept apart"],
+  ["no-dedup", "    if (seen.has(k)) continue;\n", "",
+   "a stored threat and its pushed copy count once"],
+  ["second-list-wins", "[...a, ...b]", "[...b, ...a]",
+   "a stored threat and its pushed copy count once"],
+  ["oldest-first", "(x, y) => y.ts - x.ts", "(x, y) => x.ts - y.ts",
+   "the merged window is newest first whatever order the lists arrive in"],
+  ["unsorted", ".sort((x, y) => y.ts - x.ts)", "",
+   "the merged window is newest first whatever order the lists arrive in"],
+  ["uncapped", ".slice(0, max)", "",
+   "the window keeps only the newest max threats"],
+  ["cap-before-sort", "return out.sort((x, y) => y.ts - x.ts).slice(0, max);",
+   "return out.slice(0, max).sort((x, y) => y.ts - x.ts);",
+   "the window keeps only the newest max threats"],
+];
