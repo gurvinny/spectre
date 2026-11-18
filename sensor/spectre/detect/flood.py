@@ -7,9 +7,13 @@
   APs must not add up to a flood.
 * **Probe flood** — a burst of PROBE_REQ frames (often from a single tool
   cycling MACs) used for reconnaissance or as a DoS. Signature: probe-request
-  rate above threshold, counted per band like the beacon flood. The alert
-  names the loudest sources in the window, not whichever device happened to
-  send the probe that crossed the threshold.
+  rate above threshold from at least ``probe_flood_min_sources`` distinct
+  source MACs, counted per band like the beacon flood. The source floor is
+  what separates a tool cycling MACs from a few real devices probing hard (a
+  device rescanning after its access point changed channel reaches the count
+  with a handful of sources); a flood from one fixed MAC is out of scope. The
+  alert names the loudest sources in the window, not whichever device
+  happened to send the probe that crossed the threshold.
 
 Author: gurvinny
 Project: SPECTRE
@@ -58,10 +62,12 @@ class FloodRule(Rule):
                                 ev.src or "", window_s)
             count = len(ring)
             threshold = int(self.cfg("probe_flood_threshold", 120))
+            min_sources = int(self.cfg("probe_flood_min_sources", 40))
             last_alert = self._last_probe_alert.get(ev.band, 0.0)
-            if count >= threshold and ev.received_at - last_alert > cooldown:
+            sources = Counter(m for _, m in ring) if count >= threshold else Counter()
+            if (count >= threshold and len(sources) >= min_sources
+                    and ev.received_at - last_alert > cooldown):
                 self._last_probe_alert[ev.band] = ev.received_at
-                sources = Counter(m for _, m in ring)
                 top = [[m, n] for m, n in sources.most_common(3)]
                 out.append(Threat(
                     ts=ev.received_at, rule=self.name, severity="medium",
@@ -69,7 +75,8 @@ class FloodRule(Rule):
                     band=ev.band, src=top[0][0] or None,
                     detail={"probe_reqs": count, "window_seconds": window_s,
                             "threshold": threshold,
-                            "distinct_sources": len(sources), "top_sources": top},
+                            "distinct_sources": len(sources), "min_sources": min_sources,
+                            "top_sources": top},
                 ))
 
         return out

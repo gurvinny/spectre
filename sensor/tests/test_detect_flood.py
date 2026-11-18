@@ -22,7 +22,7 @@ class TestFloodRule(unittest.TestCase):
     def setUp(self):
         self.cfg = make_cfg(flood_window_seconds=5, flood_cooldown_seconds=30,
                             beacon_flood_distinct_bssids=40,
-                            probe_flood_threshold=120)
+                            probe_flood_threshold=120, probe_flood_min_sources=40)
         self.rule = FloodRule(self.cfg)
 
     def feed(self, events):
@@ -111,21 +111,21 @@ class TestFloodRule(unittest.TestCase):
 
     def test_probe_flood_names_the_top_source_not_the_last_one(self):
         loud = "3A:11:11:11:11:11"
-        evs = [probe(100 + i * 0.01, src=loud) for i in range(100)]
-        evs += [probe(101 + i * 0.01, i) for i in range(20)]
+        evs = [probe(100 + i * 0.01, src=loud) for i in range(70)]
+        evs += [probe(101 + i * 0.01, i) for i in range(50)]
         [t] = self.feed(evs)
         self.assertEqual(t.src, loud)
-        self.assertEqual(t.detail["top_sources"][0], [loud, 100])
-        self.assertEqual(t.detail["distinct_sources"], 21)
+        self.assertEqual(t.detail["top_sources"][0], [loud, 70])
+        self.assertEqual(t.detail["distinct_sources"], 51)
 
     def test_top_sources_are_the_three_loudest_in_order(self):
         evs = [probe(100 + i * 0.001, src="3A:AA:00:00:00:03") for i in range(20)]
-        evs += [probe(100.1 + i * 0.001, src="3A:AA:00:00:00:01") for i in range(50)]
-        evs += [probe(100.2 + i * 0.001, src="3A:AA:00:00:00:02") for i in range(40)]
-        evs += [probe(100.3 + i * 0.001, i) for i in range(10)]
+        evs += [probe(100.1 + i * 0.001, src="3A:AA:00:00:00:01") for i in range(30)]
+        evs += [probe(100.2 + i * 0.001, src="3A:AA:00:00:00:02") for i in range(25)]
+        evs += [probe(100.3 + i * 0.001, i) for i in range(45)]
         [t] = self.feed(evs)
-        self.assertEqual(t.detail["top_sources"], [["3A:AA:00:00:00:01", 50],
-                                                   ["3A:AA:00:00:00:02", 40],
+        self.assertEqual(t.detail["top_sources"], [["3A:AA:00:00:00:01", 30],
+                                                   ["3A:AA:00:00:00:02", 25],
                                                    ["3A:AA:00:00:00:03", 20]])
 
     def test_sources_outside_the_window_are_not_counted(self):
@@ -135,6 +135,31 @@ class TestFloodRule(unittest.TestCase):
         [t] = self.feed(evs)
         self.assertNotIn(old, [m for m, _ in t.detail["top_sources"]])
         self.assertEqual(t.detail["probe_reqs"], 120)
+
+    # A flood tool cycles source MACs; a few real devices probing hard (a device rescanning after
+    # its access point changed channel) reach the count with a handful of sources and are not a flood.
+    def test_a_few_devices_probing_hard_are_not_a_flood(self):
+        srcs = [f"3A:DD:00:00:00:{k:02X}" for k in range(6)]
+        self.assertEqual(self.feed(probe(100 + i * 0.01, src=srcs[i % 6]) for i in range(300)), [])
+
+    def test_39_distinct_sources_is_not_a_flood_and_the_40th_is(self):
+        def burst(t0, n):
+            return [probe(t0 + i * 0.001, src=f"3A:CC:00:00:00:{i % n:02X}") for i in range(120)]
+        self.assertEqual(self.feed(burst(100, 39)), [])
+        [t] = self.feed(burst(200, 40))
+        self.assertEqual((t.detail["distinct_sources"], t.detail["min_sources"]), (40, 40))
+
+    def test_a_few_source_burst_does_not_start_the_cooldown(self):
+        srcs = [f"3A:DD:00:00:00:{k:02X}" for k in range(6)]
+        quiet = self.feed(probe(100 + i * 0.001, src=srcs[i % 6]) for i in range(120))
+        real = self.feed(probe(102 + i * 0.001, 1000 + i) for i in range(120))
+        self.assertEqual((len(quiet), len(real)), (0, 1))
+
+    def test_min_sources_change_is_picked_up_live(self):
+        self.cfg.values["probe_flood_min_sources"] = 1
+        srcs = [f"3A:DD:00:00:00:{k:02X}" for k in range(6)]
+        [t] = self.feed(probe(100 + i * 0.001, src=srcs[i % 6]) for i in range(120))
+        self.assertEqual(t.detail["distinct_sources"], 6)
 
     def test_window_change_is_picked_up_live(self):
         self.cfg.values["flood_window_seconds"] = 1

@@ -62,6 +62,7 @@ export default function SettingsPage() {
           <Num label="Deauth flood — window (s)" k="deauth_window_seconds" v={NUM(draft.deauth_window_seconds)} set={set} />
           <Num label="Beacon flood — distinct BSSIDs" k="beacon_flood_distinct_bssids" v={NUM(draft.beacon_flood_distinct_bssids)} set={set} />
           <Num label="Probe flood — requests" k="probe_flood_threshold" v={NUM(draft.probe_flood_threshold)} set={set} />
+          <Num label="Probe flood — distinct sources" hint="a few devices probing hard is not a flood" k="probe_flood_min_sources" v={NUM(draft.probe_flood_min_sources)} set={set} />
           <Num label="Flood window (s)" k="flood_window_seconds" v={NUM(draft.flood_window_seconds)} set={set} />
           <Num label="RSSI jump (dB)" k="rssi_jump_db" v={NUM(draft.rssi_jump_db)} set={set} />
           <Num label="Threat cooldown (s)" hint="mutes a repeating alert" k="threat_cooldown_seconds" v={NUM(draft.threat_cooldown_seconds)} set={set} />

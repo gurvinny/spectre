@@ -27,6 +27,7 @@ DEFAULTS: dict[str, Any] = {
     "flood_cooldown_seconds": 30,
     "beacon_flood_distinct_bssids": 40,
     "probe_flood_threshold": 120,
+    "probe_flood_min_sources": 40,       # distinct source MACs: a few real devices probing hard is not a flood
     # anomalies (tuned "quiet" — real airspace is noisy)
     "new_device_alerts": False,          # off by default; enable per-environment
     "alert_randomized_devices": False,   # mute the constant randomized-MAC noise
