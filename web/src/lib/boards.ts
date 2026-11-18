@@ -4,7 +4,7 @@
  * and acks errors; this only catches mistakes before they reach the board.
  * Author: gurvinny
  */
-import type { BoardAck } from "@/lib/types";
+import type { Board, BoardAck } from "@/lib/types";
 
 /** Telemetry every 10 s and a sweep every few seconds: 30 s of silence is odd. */
 export const STALE_S = 30;
@@ -53,6 +53,42 @@ export function fmtPct(v: number | null, digits = 1): string {
 
 export function fmtFrac(v: number | null): string {
   return v == null ? "—" : fmtPct(v * 100, 0);
+}
+
+/** Bytes per second as B/s or KB/s (1000-based, as the firmware counts). */
+export function fmtRate(bps: number | null | undefined): string {
+  if (bps == null || !Number.isFinite(bps)) return "—";
+  return bps < 1000 ? `${Math.round(bps)} B/s` : `${(bps / 1000).toFixed(1)} KB/s`;
+}
+
+/** The board's data link: telemetry names it on 2.1.0, else the boot line, else a UART. */
+export function boardLink(board: Pick<Board, "health" | "firmware">): "usb" | "uart" {
+  return (board.health.link ?? board.firmware?.link) === "usb" ? "usb" : "uart";
+}
+
+export type LinkStat = { label: string; value: string; level: Level; sub?: string };
+
+/** The link cell: UART load against the line rate, or USB throughput and refused lines. */
+export function linkStat(board: Pick<Board, "health" | "firmware">): LinkStat {
+  const h = board.health;
+  const peak = h.queue_fill != null ? `queue peak ${fmtFrac(h.queue_fill)}` : undefined;
+  if (boardLink(board) === "usb") {
+    // USB has no line rate to fill; drop_usb counts since boot, so a few from before
+    // the host opened the port stay on it and are shown, not alarmed on.
+    const refused = h.drop_usb != null ? `${h.drop_usb} refused since boot` : undefined;
+    return {
+      label: "USB link", value: fmtRate(h.usb_bps), level: "none",
+      sub: [peak, refused].filter(Boolean).join(" · ") || undefined,
+    };
+  }
+  return { label: "UART load", value: fmtFrac(h.uart_load), level: loadLevel(h.uart_load), sub: peak };
+}
+
+/** Firmware cell detail: the link and, on a UART, its baud. */
+export function linkText(board: Pick<Board, "health" | "firmware">): string {
+  if (boardLink(board) === "usb") return "native USB";
+  const baud = board.firmware?.baud;
+  return baud ? `${baud} baud` : "baud ?";
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };

@@ -116,7 +116,7 @@ Details: [firmware/README.md](../firmware/README.md).
   logs, `board_events` (lifecycle lines and the command audit), `ap_info`, control-plane tables
   (config/users/sessions), retention + disk guard, additive schema migration.
 - **Boards** (`boards.py`) — reduces each board's newest `boot`, `telemetry`, sweep and `cmd_ack` rows
-  to firmware, radio plan, loss and UART load, and validates console commands. Commands are refused
+  to firmware, radio plan, loss and link load (UART load or USB throughput), and validates console commands. Commands are refused
   unless `SPECTRE_BOARD_CONTROL=true`.
 - **WazuhForwarder** (`wazuh.py`) — builds RFC 5424 and sends over UDP/TCP; reads host/port/proto
   live so Settings changes take effect immediately.

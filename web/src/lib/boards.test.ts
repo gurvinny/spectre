@@ -5,9 +5,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  ackText, buildSetCommand, fmtFrac, fmtPct, levelColor, liveness, loadLevel, lossLevel,
-  malformedLevel, parseChannels,
+  ackText, boardLink, buildSetCommand, fmtFrac, fmtPct, fmtRate, levelColor, linkStat, linkText,
+  liveness, loadLevel, lossLevel, malformedLevel, parseChannels,
 } from "@/lib/boards";
+import type { Board, BoardHealth } from "@/lib/types";
 
 test("liveness ages a board from live to stale to silent", () => {
   assert.equal(liveness(null, 1000), "silent");
@@ -106,4 +107,64 @@ test("any line that did not parse is a warning, never critical", () => {
   assert.equal(malformedLevel(0), "ok");
   assert.equal(malformedLevel(1), "warn");
   assert.equal(malformedLevel(1e9), "warn");
+});
+
+const health = (over: Partial<BoardHealth> = {}): BoardHealth => ({
+  rx_total: null, emitted: null, lost: null, loss_pct: null, drops: {}, uart_bps: null,
+  uart_load: null, queue_fill: null, heap: null, heap_min: null, temp_c: null, uptime_ms: null,
+  ...over,
+});
+const fwOf = (over: Partial<NonNullable<Board["firmware"]>> = {}): Board["firmware"] => ({
+  chip: "esp32c5", fw: "v2", ver: "2.1.0", elf_sha: null, reset: null, baud: 921600, caps: null,
+  booted_at: null, ...over,
+});
+
+test("telemetry names the link first, then the boot line, else it is a UART", () => {
+  assert.equal(boardLink({ health: health({ link: "usb" }), firmware: fwOf({ link: "uart" }) }), "usb");
+  assert.equal(boardLink({ health: health({ link: "uart" }), firmware: fwOf({ link: "usb" }) }), "uart");
+  assert.equal(boardLink({ health: health(), firmware: fwOf({ link: "usb" }) }), "usb");
+  assert.equal(boardLink({ health: health({ link: null }), firmware: fwOf({ link: "usb" }) }), "usb");
+  assert.equal(boardLink({ health: health(), firmware: fwOf() }), "uart");
+  assert.equal(boardLink({ health: health(), firmware: null }), "uart");
+});
+
+test("a USB board shows throughput and refused lines, never a UART load", () => {
+  const s = linkStat({
+    health: health({ link: "usb", usb_bps: 6400, drop_usb: 860, uart_load: 0.95, queue_fill: 0.035 }),
+    firmware: fwOf({ link: "usb" }),
+  });
+  assert.deepEqual(s, {
+    label: "USB link", value: "6.4 KB/s", level: "none",
+    sub: "queue peak 4% · 860 refused since boot",
+  });
+  assert.equal(linkStat({ health: health({ link: "usb" }), firmware: null }).sub, undefined);
+  assert.equal(linkStat({ health: health({ link: "usb", drop_usb: 0 }), firmware: null }).sub,
+    "0 refused since boot");
+  assert.equal(linkStat({ health: health({ link: "usb", queue_fill: 0.5 }), firmware: null }).sub,
+    "queue peak 50%");
+});
+
+test("a UART board shows its load against the line rate", () => {
+  assert.deepEqual(linkStat({ health: health({ uart_load: 0.92, queue_fill: 0.86 }), firmware: fwOf() }), {
+    label: "UART load", value: "92%", level: "crit", sub: "queue peak 86%",
+  });
+  assert.deepEqual(linkStat({ health: health({ uart_load: 0.1 }), firmware: fwOf() }),
+    { label: "UART load", value: "10%", level: "ok", sub: undefined });
+});
+
+test("rates read in bytes or kilobytes per second", () => {
+  assert.equal(fmtRate(null), "—");
+  assert.equal(fmtRate(undefined), "—");
+  assert.equal(fmtRate(Number.NaN), "—");
+  assert.equal(fmtRate(0), "0 B/s");
+  assert.equal(fmtRate(999.4), "999 B/s");
+  assert.equal(fmtRate(1000), "1.0 KB/s");
+  assert.equal(fmtRate(87_600), "87.6 KB/s");
+});
+
+test("the firmware cell names native USB instead of a baud it does not use", () => {
+  assert.equal(linkText({ health: health({ link: "usb" }), firmware: fwOf() }), "native USB");
+  assert.equal(linkText({ health: health(), firmware: fwOf() }), "921600 baud");
+  assert.equal(linkText({ health: health(), firmware: fwOf({ baud: null }) }), "baud ?");
+  assert.equal(linkText({ health: health(), firmware: null }), "baud ?");
 });

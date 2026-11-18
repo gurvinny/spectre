@@ -117,7 +117,13 @@ export interface BoardHealth {
   loss_pct: number | null;
   drops: Record<string, number | null>;
   uart_bps: number | null;
+  /** Share of the UART line rate in use; null on a USB link, which has no line rate. */
   uart_load: number | null;
+  /** The data link telemetry names (firmware 2.1.0 and later); null before that. */
+  link?: "usb" | "uart" | null;
+  usb_bps?: number | null;
+  /** Lines the USB host did not take, since boot. */
+  drop_usb?: number | null;
   queue_fill: number | null;
   heap: number | null;
   heap_min: number | null;
@@ -146,6 +152,7 @@ export interface Board {
     elf_sha: string | null;
     reset: string | null;
     baud: number | null;
+    link?: "usb" | "uart" | null;
     caps: string[] | null;
     booted_at: number | null;
     /** The board restarted while nothing read its port: the stored boot line is

@@ -30,6 +30,8 @@ test("both simulated boards report firmware, plan and health", async ({ page }) 
     await expect(c).toBeVisible();
     await expect(c).toContainText(band);
     await expect(c).toContainText("921600 baud");
+    // The simulator streams over a UART, so its link cell is the line load.
+    await expect(c.getByTestId("board-link")).toHaveText(/%$/);
     await expect(c).toContainText("live");
     // Telemetry arrives every 10 s; a loss figure replaces the dash once it has.
     await expect(c.getByTestId("board-loss")).toHaveText(/%$/, { timeout: 30_000 });

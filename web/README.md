@@ -22,7 +22,7 @@ speaks). The signature is the live **SPECTRE console banner** and the channel-ut
 | `/spectrum` | Channel-utilization analyzer + waterfall heatmap |
 | `/live` | Raw live frame feed |
 | `/inventory` | Devices and access points, with trust/mute and `active` / `archived` / `all` scopes |
-| `/boards` | Per-board firmware, radio plan, loss, UART load and queue peak; retune / reset / reboot when the sensor runs with `SPECTRE_BOARD_CONTROL=true` |
+| `/boards` | Per-board firmware, radio plan, loss, link load (UART load, or USB throughput and refused lines) and queue peak; retune / reset / reboot when the sensor runs with `SPECTRE_BOARD_CONTROL=true` |
 | `/threats` | Detection log with a severity spine |
 | `/battlespace` | 3D WebGL view of the RF environment. **Experimental**: only built when `NEXT_PUBLIC_EXPERIMENTAL=true` |
 | `/settings` | Live config, Known Networks, appearance |

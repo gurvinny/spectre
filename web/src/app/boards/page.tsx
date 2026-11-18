@@ -11,7 +11,7 @@ import { usePoll } from "@/hooks/usePoll";
 import { Empty, Panel, Pill, SectionHeader } from "@/components/ui";
 import { bandColor, compact, fmtUptime, timeAgo } from "@/lib/format";
 import {
-  ackText, buildSetCommand, fmtFrac, fmtPct, levelColor, liveness, loadLevel, lossLevel,
+  ackText, boardLink, buildSetCommand, fmtPct, levelColor, linkStat, linkText, liveness, lossLevel,
   malformedLevel, type SetForm,
 } from "@/lib/boards";
 import type { Board, BoardAck, BoardsResponse } from "@/lib/types";
@@ -67,7 +67,7 @@ function BoardCard({ board, now, control, onChange }: {
   const h = board.health;
   const fw = board.firmware;
   const loss = lossLevel(h.loss_pct);
-  const load = loadLevel(h.uart_load);
+  const link = linkStat(board);
 
   return (
     <div data-testid="board-card" data-board={board.sensor_id}>
@@ -86,8 +86,8 @@ function BoardCard({ board, now, control, onChange }: {
           <Stat label="Firmware"
             value={fw?.ver ? `${fw.ver}` : fw ? "original" : "—"}
             color={fw?.boot_missed ? levelColor("warn") : undefined}
-            sub={fw?.elf_sha ? `${fw.elf_sha.slice(0, 8)} · ${fw.baud ? `${fw.baud} baud` : "baud ?"}`
-              : fw?.baud ? `${fw.baud} baud` : fw ? "no telemetry" : undefined} />
+            sub={fw?.elf_sha ? `${fw.elf_sha.slice(0, 8)} · ${linkText(board)}`
+              : fw?.baud || boardLink(board) === "usb" ? linkText(board) : fw ? "no telemetry" : undefined} />
           <Stat label="Channels" value={board.plan.channels ?? "—"}
             sub={board.plan.dwell_ms != null ? `${board.plan.dwell_ms} ms dwell` : undefined} />
           <Stat label="Pinned" value={board.plan.pin ? `ch ${board.plan.pin}` : "no"} />
@@ -99,8 +99,8 @@ function BoardCard({ board, now, control, onChange }: {
           <Stat label="Lost" value={fmtPct(h.loss_pct, 2)} color={levelColor(loss)}
             testId="board-loss"
             sub={h.lost != null ? `${compact(h.lost)} frames` : undefined} />
-          <Stat label="UART load" value={fmtFrac(h.uart_load)} color={levelColor(load)}
-            sub={h.queue_fill != null ? `queue peak ${fmtFrac(h.queue_fill)}` : undefined} />
+          <Stat label={link.label} value={link.value} testId="board-link"
+            color={link.level === "none" ? undefined : levelColor(link.level)} sub={link.sub} />
           <Stat label="Heap min" value={h.heap_min != null ? `${compact(h.heap_min)}B` : "—"} />
           <Stat label="Temp" value={h.temp_c != null ? `${h.temp_c.toFixed(1)}°C` : "—"} />
           <Stat label="Bad lines" testId="board-malformed"

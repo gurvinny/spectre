@@ -145,7 +145,7 @@ flowchart LR
 
 - 🎯 **Dual-band sensing** — 2.4GHz + 5GHz boards, each **auto-identified from its boot event** (USB re-enumeration can't mix them up).
 - 📟 **Open firmware** — One ESP-IDF image for both boards, band and channel plan set by command and kept in NVS. Per-frame radio and 802.11 detail, per-AP security summaries, and receive/drop counters. A flash tool verifies every board against the image it was given.
-- 🩺 **Board health and control** — The **Boards** page shows each board's firmware, channel plan, loss and UART load. Retune, reset or reboot a board from the console when `SPECTRE_BOARD_CONTROL=true`; every command is audited.
+- 🩺 **Board health and control** — The **Boards** page shows each board's firmware, channel plan, loss and link load (UART load, or USB throughput). Retune, reset or reboot a board from the console when `SPECTRE_BOARD_CONTROL=true`; every command is audited.
 - ⚡ **Real-time detection** — Detects deauth/disassoc floods, rogue APs, evil twins, beacon & probe floods, new devices, and RSSI anomalies. All server-side, tunable in Settings without reflashing.
 - 🎛️ **SOC threat console** — Live frame feed, complete device & AP inventory, threat log with a severity spine, channel-utilization spectrum sweeps, and throughput trends. Crafted with a dark RF-instrument aesthetic.
 - 🛡️ **Wazuh forwarding** — Native RFC 5424 over UDP/TCP. Syslog severity intelligently mapped from threat severity. Sends only threats and summaries to preserve SIEM efficiency. Editable at runtime.
@@ -433,7 +433,7 @@ All routes are under `/api` and require an authenticated session cookie, except 
 | `GET` `PUT` | `/api/settings` | Live configuration |
 | `GET` `POST` `DELETE` | `/api/known-networks` | Evil-twin allowlist |
 | `GET` `POST` `DELETE` | `/api/muted-devices` | Per-MAC anomaly muting |
-| `GET` | `/api/boards` | Per-board firmware, radio plan, loss, UART load, lines that did not parse and last command |
+| `GET` | `/api/boards` | Per-board firmware, radio plan, loss, link load (UART or USB), lines that did not parse and last command |
 | `POST` | `/api/boards/{id}/cmd` | Send a firmware command; `403` unless `SPECTRE_BOARD_CONTROL=true`, answered with the board's `cmd_ack` when it arrives within 3 s |
 | `WS` | `/ws` | Live frame / threat / summary push |
 

@@ -226,7 +226,7 @@ line, restart each board while the sensor is running: press the board's **RST** 
 `SPECTRE_BOARD_CONTROL=true` use **Reboot** then **Confirm reboot** on the Boards page. The new boot row
 lands in `board_events` and the note clears.
 
-Check each board on the Boards page: firmware version, band, channel plan, loss and UART load.
+Check each board on the Boards page: firmware version, band, channel plan, loss and link load (UART load, or USB throughput and refused lines).
 
 ## Updating a board that already runs v2
 
