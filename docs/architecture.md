@@ -33,7 +33,7 @@ the sensor service, and its two consumers.
 flowchart TB
     subgraph FW["Firmware · each ESP32-C5"]
         RX["promiscuous rx_cb<br/>copy header + IEs"]
-        RG[("ring buffer<br/>32 KB")]
+        RG[("ring buffer<br/>64 KiB")]
         EM["emit task<br/>decode → JSON line"]
         HP["hop task<br/>channel · sweep · telemetry"]
         CM["cmd task<br/>NVS config"]

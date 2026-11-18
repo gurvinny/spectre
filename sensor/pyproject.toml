@@ -1,6 +1,6 @@
 [project]
 name = "spectre-sensor"
-version = "0.1.0"
+version = "1.0.0b1"
 description = "SPECTRE — WiFi threat sensor: UART ingest, detection, API, Wazuh forwarding"
 authors = [{ name = "gurvinny" }]
 license = { text = "AGPL-3.0-or-later" }

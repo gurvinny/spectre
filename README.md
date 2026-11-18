@@ -17,7 +17,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/gurvinny/spectre/ci.yml?branch=main&style=flat-square&label=CI&labelColor=0a0e12&color=35E0C4)](../../actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/gurvinny/spectre/codeql.yml?branch=main&style=flat-square&label=CodeQL&labelColor=0a0e12&color=35E0C4)](../../actions/workflows/codeql.yml)
 [![Browser QA](https://img.shields.io/github/actions/workflow/status/gurvinny/spectre/browser-qa.yml?branch=main&style=flat-square&label=Browser%20QA&labelColor=0a0e12&color=35E0C4)](../../actions/workflows/browser-qa.yml)
-[![Version](https://img.shields.io/badge/Version-0.1.0-35E0C4.svg?style=flat-square&labelColor=0a0e12)](#)
+[![Version](https://img.shields.io/badge/Version-1.0.0--beta.1-35E0C4.svg?style=flat-square&labelColor=0a0e12)](#)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-35E0C4.svg?style=flat-square&logo=gnu&logoColor=white&labelColor=0a0e12)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.14-35E0C4.svg?style=flat-square&logo=python&logoColor=white&labelColor=0a0e12)](sensor/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-35E0C4.svg?style=flat-square&logo=fastapi&logoColor=white&labelColor=0a0e12)](sensor/)

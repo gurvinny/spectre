@@ -37,7 +37,7 @@ Which of them you actually hop is up to you.
 }}%%
 flowchart TB
     D["Wi-Fi driver<br/>promiscuous, NULL mode"] --> CB["rx_cb<br/>header + IEs + radio meta"]
-    CB -- "fits" --> RG[("ring buffer<br/>32 KB, no-split")]
+    CB -- "fits" --> RG[("ring buffer<br/>64 KiB, no-split")]
     CB -- "full" --> DQ["drop_queue++"]
     RG --> EM["emit task"]
     EM -- "too short" --> DS["drop_short++"]
