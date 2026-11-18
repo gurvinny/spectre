@@ -1,5 +1,5 @@
 # Optional override: attach SPECTRE to an existing Nginx Proxy Manager
-# network for TLS + access control (mirrors the dashboard project pattern).
+# network for TLS + access control.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d
 #

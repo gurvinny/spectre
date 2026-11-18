@@ -32,7 +32,7 @@ else
   say "Generated SPECTRE_SECRET."
 
   default_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  default_ip="${default_ip:-10.0.0.10}"
+  default_ip="${default_ip:-127.0.0.1}"
   read -rp "$(printf '\033[36m[spectre]\033[0m Host LAN IP for the web UI [%s]: ' "$default_ip")" host_ip
   host_ip="${host_ip:-$default_ip}"
   sed -i.bak \

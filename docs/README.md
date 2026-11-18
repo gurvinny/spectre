@@ -22,7 +22,7 @@ in the order you are likely to need them.
 
 | Page | Read it when |
 |---|---|
-| [architecture.md](architecture.md) | Following a frame from the UART to the console and the SIEM |
+| [architecture.md](architecture.md) | Following a frame from the board to the console and the SIEM |
 | [data-contract.md](data-contract.md) | Reading the wire format, the database columns, or writing your own firmware |
 | [firmware/README.md](../firmware/README.md) | Building the firmware, its line format, commands, counters and limits |
 | [sensor/README.md](../sensor/README.md) | The Python service: modules, simulator, replay, tests |
@@ -32,5 +32,11 @@ in the order you are likely to need them.
 
 [SECURITY.md](../SECURITY.md) (reporting a vulnerability) · [CONTRIBUTING.md](../CONTRIBUTING.md)
 (issues welcome, code is single-author) · [LICENSE](../LICENSE) (AGPL-3.0-or-later)
+
+Brand assets live in [assets/](assets/): the mark (`spectre-mark.svg`, `-light` for light
+backgrounds), the lockup with the wordmark (`spectre-lockup.svg`, `-light`), the README banner and the
+social preview source. All text in them is outlined, so they need no fonts. The console's favicon set is
+in `web/src/app/` (`favicon.ico`, `icon.svg`, `apple-icon.png`) and `web/public/` (`icon-192.png`,
+`icon-512.png`).
 
 _Author: gurvinny · Project: SPECTRE_

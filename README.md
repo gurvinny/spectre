@@ -51,7 +51,7 @@
 
 ## ✦ What It Does
 
-**SPECTRE** turns two **ESP32-C5** WiFi boards — one sniffing 2.4GHz, one on 5GHz — into a live, dual-band **wireless intrusion-detection system**. Each board runs SPECTRE's own open, receive-only firmware ([`firmware/`](firmware/README.md)), which streams every management and data frame it hears as JSON over UART, with drop counters so loss on the board is counted rather than silent.
+**SPECTRE** turns two **ESP32-C5** WiFi boards — one sniffing 2.4GHz, one on 5GHz — into a live, dual-band **wireless intrusion-detection system**. Each board runs SPECTRE's own open, receive-only firmware ([`firmware/`](firmware/README.md)), which streams every management and data frame it hears as JSON over the chip's native USB port (or a UART bridge), with drop counters so loss on the board is counted rather than silent.
 
 SPECTRE ingests both streams simultaneously, running attack-detection rules in real-time, rendering the threats in a beautiful, spectrum-analyzer–styled **SOC console**, and forwarding confirmed alerts to **Wazuh** as RFC 5424 syslog.
 
@@ -109,17 +109,17 @@ flowchart LR
 </td>
 <td width="50%" valign="top">
 <img src="docs/screenshots/05-threats.png" alt="Threat log with severity spine"/>
-<br/><sub><b>Threats</b> — every detection with its rule, severity and evidence. All four rules firing here.</sub>
+<br/><sub><b>Threats</b> — every detection with its rule, severity and evidence. Deauth flood, probe flood and RSSI anomaly firing here.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <img src="docs/screenshots/04-inventory.png" alt="Device and access point inventory"/>
-<br/><sub><b>Inventory</b> — six real APs at the top (one <code>TRUSTED</code>), then 60 <code>FreeWiFi_*</code> BSSIDs that appeared in one second. That is a beacon flood, seen from the asset side.</sub>
+<br/><sub><b>Inventory</b> — the six simulated APs at the top, then the <code>FreeWiFi_*</code> BSSIDs a beacon flood created in about a second. A beacon flood, seen from the asset side.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="docs/screenshots/07-battlespace.png" alt="3D WebGL view of the RF environment"/>
-<br/><sub><b>Battlespace</b> (experimental, off by default: build with <code>NEXT_PUBLIC_EXPERIMENTAL=true</code>) — the RF environment in 3D. A deterministic layout from frame metadata, <b>not</b> triangulation.</sub>
+<img src="docs/screenshots/07-boards.png" alt="Board health for both sensor boards"/>
+<br/><sub><b>Boards</b> — each board's firmware, channel plan, uptime, receive and loss counters, queue peak, heap and temperature. Retune, reset or reboot from here when board control is enabled.</sub>
 </td>
 </tr>
 <tr>
@@ -129,10 +129,23 @@ flowchart LR
 </td>
 <td width="50%" valign="top">
 <img src="docs/screenshots/06-settings.png" alt="Settings including known networks"/>
-<br/><sub><b>Settings</b> — live tuning, the Known Networks allowlist that evil-twin detection depends on, and four dark skins.</sub>
+<br/><sub><b>Settings</b> — live detection tuning, Wazuh forwarding, and the Known Networks allowlist that evil-twin detection depends on.</sub>
 </td>
 </tr>
 </table>
+
+<br/>
+
+<div align="center">
+
+<img src="docs/screenshots/skins.png" alt="The Command Center in the four console skins: Phosphor, Amber, Ice and Nightvision" width="100%"/>
+
+<sub><b>Four skins</b> — Phosphor, Amber, Ice and Nightvision, switched from the top bar. Status colours (threat red, 5 GHz violet, severities) stay fixed so an alert reads the same in every skin.</sub>
+
+</div>
+
+A 3D <b>Battlespace</b> view of the RF environment is also available as an experimental build option
+(<code>NEXT_PUBLIC_EXPERIMENTAL=true</code>): a deterministic layout from frame metadata, <b>not</b> triangulation.
 
 > These screenshots are the **built-in simulator** (`SPECTRE_SOURCE=sim`), not a capture of a real
 > network — the SSIDs and MAC addresses in them are documentation-range placeholders. Set that in
@@ -342,7 +355,7 @@ Everything has a sensible default in `.env` (see `.env.example`) and can be chan
 | `SERIAL_PORTS` | `/dev/ttyUSB0,/dev/ttyUSB1` | Target boards (band is auto-detected). Native USB boards: `/dev/espc5/<MAC>` nodes with `docker-compose.usb.yml` ([hardware.md](docs/hardware.md#native-usb-firmware-210)). A port that goes away is reopened when it is back. |
 | `SERIAL_BAUD` | `115200` | Must match the firmware: `921600` for the v2 firmware (`460800` up to 2.0.4), `115200` for the original. Any other value stops the sensor at startup. Read on every start, not seeded. |
 | `SPECTRE_SOURCE` | `serial` | Run mode: `serial` · `sim` · `replay`. |
-| `WAZUH_HOST` / `WAZUH_PORT` | `10.0.0.20` / `514` | Target SIEM syslog destination. |
+| `WAZUH_HOST` / `WAZUH_PORT` | `192.0.2.20` / `514` | Target SIEM syslog destination. |
 | `RAW_RETENTION_HOURS` | `48` | Window for rolling raw-frame retention. |
 | `DISK_GUARD_PERCENT` | `85` | Early-prune threshold to prevent full disk. |
 | `SPECTRE_BOARD_CONTROL` | `false` | Allow board commands (retune, reset, reboot) from the **Boards** page. Read on every start, not seeded. Every command is audited in `board_events`. |

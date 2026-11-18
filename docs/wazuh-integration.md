@@ -75,11 +75,11 @@ On the Wazuh manager, accept remote syslog from the sensor (`/var/ossec/etc/osse
   <connection>syslog</connection>
   <port>514</port>
   <protocol>udp</protocol>
-  <allowed-ips>10.0.0.10</allowed-ips>
+  <allowed-ips>192.0.2.10</allowed-ips>  <!-- the SPECTRE host -->
 </remote>
 ```
 
-Point SPECTRE at the manager in **Settings** (or `.env`): `WAZUH_HOST=10.0.0.20`,
+Point SPECTRE at the manager in **Settings** (or `.env`): `WAZUH_HOST=192.0.2.20` (your manager's address),
 `WAZUH_PORT=514`, `WAZUH_PROTO=udp` (use `tcp` for guaranteed delivery across network segments).
 
 ## Decoder — `/var/ossec/etc/decoders/spectre_decoder.xml`

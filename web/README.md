@@ -14,6 +14,12 @@ RF test-equipment aesthetic: phosphor-teal signal on scope-black, `Chakra Petch`
 speaks). The signature is the live **SPECTRE console banner** and the channel-utilization
 **spectrum sweep**.
 
+The logo is the **PEAK mark**: a spectrum trace with one channel peak and the threat as the red point on top.
+In the console it is drawn inline (`components/SpectreMark.tsx`) from the theme variables, so it takes the
+active skin's colour. The favicon set (`app/favicon.ico` with 16/32/48 px frames, `app/icon.svg`,
+`app/apple-icon.png`, and `public/icon-192.png` / `icon-512.png` for `app/manifest.ts`) uses the default
+Phosphor skin. The source SVGs live in `docs/assets/`.
+
 ## Pages
 
 | Route | What it is |

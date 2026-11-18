@@ -12,7 +12,7 @@ import { SpectreMark } from "@/components/SpectreMark";
 export function SetupWizard({ onDone }: { onDone: () => void }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [wazuhHost, setWazuhHost] = useState("10.0.0.20");
+  const [wazuhHost, setWazuhHost] = useState("192.0.2.20");
   const [wazuhPort, setWazuhPort] = useState("514");
   const [wazuhProto, setWazuhProto] = useState("udp");
   const [error, setError] = useState<string | null>(null);

@@ -49,7 +49,7 @@ DEFAULTS: dict[str, Any] = {
     "ap_retention_hours": 168,           # keep APs a week before purging
     # wazuh
     "wazuh_enabled": True,
-    "wazuh_host": "10.0.0.20",
+    "wazuh_host": "192.0.2.20",     # documentation address (RFC 5737): set your SIEM
     "wazuh_port": 514,
     "wazuh_proto": "udp",
     "wazuh_app_name": "spectre",

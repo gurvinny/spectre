@@ -59,13 +59,13 @@ flowchart TB
 ```
 
 
-## Dev server (this box · `spectre-dev`, 10.0.0.10)
+## Dev machine
 
 ```bash
 bash init.sh
 # boards flashed with the v2 firmware? set SERIAL_BAUD=921600 in .env (docs/flashing.md)
 docker compose up -d --build
-# open http://10.0.0.10:4100
+# open http://<HOST_IP>:4100
 ```
 
 Verified working: the containerized reader opens the tty with DTR/RTS low and ingests real frames;
@@ -81,6 +81,10 @@ band is auto-detected from each board's boot event.
 4. `docker compose up -d --build`.
 
 ### USB passthrough into an **unprivileged** LXC
+
+This section is for boards on a USB-UART bridge (`/dev/ttyUSB*`). Boards streaming on their native USB
+port (firmware 2.1.0 and later) pass through as a directory of stable nodes instead: see
+[hardware.md](hardware.md#native-usb-firmware-210).
 
 Unprivileged LXCs can't see host USB serial devices by default. On the **Proxmox host**, find the
 adapters and add to the container config (`/etc/pve/lxc/<vmid>.conf`):
