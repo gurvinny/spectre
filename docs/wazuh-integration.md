@@ -85,8 +85,11 @@ Point SPECTRE at the manager in **Settings** (or `.env`): `WAZUH_HOST=192.0.2.20
 ## Decoder — `/var/ossec/etc/decoders/spectre_decoder.xml`
 
 ```xml
+<!-- The parent matches the RFC 5424 header itself: Wazuh's pre-decoder extracts no program name
+     from a 5424 line, so a program_name decoder would never match. \x3c and \x3e stand for the angle
+     brackets around the PRI, because a literal one makes this file invalid XML. -->
 <decoder name="spectre">
-  <program_name>spectre</program_name>
+  <prematch type="pcre2">^(?:\x3c\d+\x3e)?1 \S+ \S+ spectre \S+ (?:THREAT|SUMMARY) </prematch>
 </decoder>
 
 <!-- One child decoder pulls every field out of the JSON body, in the order the sensor writes them.
@@ -192,9 +195,15 @@ technique for what the attacker gains, not for the radio mechanism.
 Restart the manager (`systemctl restart wazuh-manager`) and test with
 `/var/ossec/bin/wazuh-logtest`, pasting a captured line.
 
-> **Version note:** RFC 5424 predecoding varies across Wazuh versions. The decoder above keys off
-> the JSON body (the most stable part) rather than the syslog header, so it works regardless of how
-> the manager predecodes the 5424 frame. It needs a manager with PCRE2 support (`type="pcre2"`).
+> **Version note:** tested with `wazuh-logtest` on Wazuh 4.14.8. Its pre-decoder extracts no
+> hostname, program name or timestamp from an RFC 5424 line, so the parent decoder matches the 5424
+> header with its own `prematch` instead of `<program_name>`, and the child decoder takes its fields
+> from the JSON body. The PRI is optional in the pattern, so the decoder still matches if a manager
+> strips it. Both need a manager with PCRE2 support (`type="pcre2"`).
+>
+> **Do not write `<` or `>` inside a pattern.** Wazuh reads the decoder file as XML, so a literal
+> `(?:<\d+>)?` fails with `XMLERR: Element '\d+' not closed` and `wazuh-analysisd` refuses to
+> start, which stops the whole manager. Use `\x3c` and `\x3e`.
 > `sensor/tests/test_wazuh_docs.py` checks these blocks against real sensor output, but it models
 > Wazuh's matching in Python: `wazuh-logtest` on your manager is the final word.
 
