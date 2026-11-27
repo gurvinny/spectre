@@ -7,8 +7,11 @@ out of the doc, so a change to the wire format, a detector title, or the doc
 breaks this suite instead of a reader's SIEM.
 
 Wazuh itself is not run here. The matcher below models the parts the doc
-relies on: ``program_name`` + child decoder regex, ``if_sid`` descent in file
-order, ``field`` regex matches, and ``mitre`` ids.
+relies on: the parent decoder's ``prematch`` on the full line, child decoder
+regex, ``if_sid`` descent in file order, ``field`` regex matches, and ``mitre``
+ids. It also models what the Wazuh 4.14.8 pre-decoder does with an RFC 5424
+line, checked with ``wazuh-logtest``: it extracts no hostname or program name,
+so a parent decoder keyed on ``program_name`` never matches.
 """
 import os
 import re
@@ -77,16 +80,32 @@ class Wazuh:
 
     def __init__(self):
         decoders = _xml_after("## Decoder")
-        self.program = decoders.find("decoder[@name='spectre']/program_name").text
+        parent = decoders.find("decoder[@name='spectre']")
+        self.program = parent.findtext("program_name")
+        prematch = parent.find("prematch")
+        self.prematch = compiled(prematch) if prematch is not None else None
         self.children = [
             (compiled(d.find("regex")), d.find("order").text.split(","))
             for d in decoders.findall("decoder") if d.find("parent") is not None
         ]
         self.rules = _xml_after("## Rules").findall(".//rule")
 
+    @staticmethod
+    def predecoded_program(line: str):
+        """The program name Wazuh's pre-decoder extracts from *line*.
+
+        For RFC 5424 (``<PRI>1 ...``) it extracts none: ``wazuh-logtest`` on
+        4.14.8 shows an empty Phase 1 for the forwarder's frames.
+        """
+        return None if re.match(r"^<\d+>1 ", line) else line.split(" ", 4)[3]
+
     def decode(self, line: str):
         m = FRAME.match(line)
-        if m is None or m.group(1) != self.program:
+        if m is None:
+            return None
+        if self.program is not None and self.predecoded_program(line) != self.program:
+            return None
+        if self.prematch is not None and not self.prematch.search(line):
             return None
         fields = {}
         for regex, order in self.children:
@@ -223,6 +242,17 @@ class TestPublishedWazuhConfig(unittest.TestCase):
     def test_summary_stays_on_the_base_rule(self):
         self.assertTrue(self.fwd.send_summary({"frames": 10}))
         self.assertEqual(self.wazuh.analyze(self.sink.recv()), ("100600", []))
+
+    def test_parent_decoder_matches_without_the_predecoder(self):
+        # The documented decoder must not depend on a program name 4.14.8 never extracts.
+        self.assertIsNone(self.wazuh.program, "program_name never matches RFC 5424 on Wazuh 4.14.8")
+        self.assertIsNotNone(self.wazuh.prematch)
+
+    def test_decoder_xml_has_no_literal_angle_brackets_in_patterns(self):
+        # A literal "<" in a pattern is invalid XML to Wazuh too: analysisd refuses to start.
+        block = re.search(r"```xml\n(.*?)```", _doc()[_doc().index("## Decoder"):], re.S).group(1)
+        for pat in re.findall(r"<(?:prematch|regex)[^>]*>(.*?)</", block):
+            self.assertNotRegex(pat, r"[<>]")
 
     def test_other_programs_are_not_decoded(self):
         line = '<190>1 2026-01-01T00:00:00.000Z host other - THREAT - {"rule":"evil_twin"}'

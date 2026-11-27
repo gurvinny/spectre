@@ -4,6 +4,15 @@ All notable changes to SPECTRE. Versions follow [Semantic Versioning](https://se
 web console share one version; the firmware has its own (`firmware/spectre-sniffer/version.txt`), and each
 release names the firmware it ships.
 
+## [Unreleased]
+
+### Fixed
+- Wazuh decoder in `docs/wazuh-integration.md` now matches on a real manager. It keyed on
+  `program_name`, which the Wazuh pre-decoder never extracts from an RFC 5424 line, so no event decoded.
+  The parent decoder now matches the 5424 header itself (tested with `wazuh-logtest` on 4.14.8), and the
+  doc warns that a literal `<` in a pattern stops the manager. `test_wazuh_docs.py` now models that
+  pre-decoder behaviour and fails on the old decoder (#172).
+
 ## [1.0.0-beta.1] - 2026-11-18
 
 First tagged release. Sensor and console `1.0.0-beta.1`, firmware `2.1.0`.
